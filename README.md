@@ -44,16 +44,26 @@ highlighter, and produces standard SFML programs that SFM executes. All of the
 factory-automation logic, the SFML language, and the underlying manager belong to
 SFM. This project only adds a visual editing front-end.
 
-### 2. Steve's Factory Manager (SFM's own inspiration)
-- The classic *Steve's Factory Manager* (originally by **Vswe**, and the
-  *ModJam3* / community reimplementations) is the visual node-editor design that
-  both SFM and this GUI take inspiration from.
-- The node-canvas look and feel here (frames, menu strips, connection nubs, the
-  `flow_components` sprite layout) are ported from the classic *Steve's Factory
-  Manager / ModJam3* UI.
+### 2. Steve's Factory Manager (the node-editor UI inspiration)
+
+The visual node-editor design — the node canvas, menu strips, connection nubs and
+the `flow_components` sprite layout — is inspired by and ported from the classic
+*Steve's Factory Manager* and its community reimplementations:
+
+- **ModJam3 / Steve's Factory Manager** — Vswe (original author):
+  <https://github.com/Vswe/ModJam3>
+- **Steve's Factory Manager (Reborn / continuation)** — gigabit101:
+  <https://github.com/gigabit101/StevesFactoryManager>
+
+The classic UI look and feel (frames, menu strips, connection nubs, the flow
+component sprite sheet) originate from these projects.
 
 If you enjoy this addon, please support the original **Super Factory Manager** and
-the authors of **Steve's Factory Manager**.
+the authors of **Steve's Factory Manager** (Vswe and gigabit101).
+
+> 本项目的节点编辑器 UI 参考并移植自经典的 *Steve's Factory Manager* 及其社区续作：
+> Vswe 的 [ModJam3](https://github.com/Vswe/ModJam3) 与
+> gigabit101 的 [StevesFactoryManager](https://github.com/gigabit101/StevesFactoryManager)。
 
 ---
 
