@@ -137,10 +137,15 @@ public final class ClassicTextures {
 
     /** Left toolbar button: outer frame (row by hover) + inner icon (row by index). */
     public static void toolbarButton(GuiGraphics g, int x, int y, int iconIndex, boolean hover) {
-        int frameY = TOOLBTN_SRC_Y + TOOLBTN_SIZE * (hover ? 1 : 0);
-        flow(g, x, y, TOOLBTN_SRC_X, frameY, TOOLBTN_SIZE, TOOLBTN_SIZE);
+        toolbarFrame(g, x, y, hover);
         int iconY = TOOLICON_SRC_Y + TOOLICON_SIZE * iconIndex;
         flow(g, x + 1, y + 1, TOOLICON_SRC_X, iconY, TOOLICON_SIZE, TOOLICON_SIZE);
+    }
+
+    /** Just the toolbar button frame (for buttons that draw a custom inner icon). */
+    public static void toolbarFrame(GuiGraphics g, int x, int y, boolean hover) {
+        int frameY = TOOLBTN_SRC_Y + TOOLBTN_SIZE * (hover ? 1 : 0);
+        flow(g, x, y, TOOLBTN_SRC_X, frameY, TOOLBTN_SIZE, TOOLBTN_SIZE);
     }
 
     /** Wide action button stretched (nine-sliced) to an arbitrary width. */

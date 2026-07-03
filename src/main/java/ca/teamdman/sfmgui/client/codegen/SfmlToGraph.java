@@ -109,6 +109,9 @@ public final class SfmlToGraph {
             node.unit = TriggerNode.TimeUnit.TICKS;
             node.global = interval.alignment() == Interval.IntervalAlignment.GLOBAL;
             node.offset = interval.offset();
+            // A sub-20-tick interval is only valid for Forge-Energy-only timers, so
+            // reopen such programs in power-transfer mode (reverse-infer, no extra tag).
+            node.powerTransfer = interval.ticks() < 20;
             mapBlockInto(timer.block(), node.statements);
             return node;
         }

@@ -43,6 +43,10 @@
   "gui.sfmgui.tool.output": "输出",
   "gui.sfmgui.tool.if": "条件判断",
   "gui.sfmgui.tool.forget": "遗忘标签",
+  "gui.sfmgui.tool.power_blueprint": "输电蓝图",
+  "gui.sfmgui.tool.item_blueprint": "物品蓝图",
+  "gui.sfmgui.toast.undo": "已撤销",
+  "gui.sfmgui.toast.redo": "已重做",
   "gui.sfmgui.node.input": "输入",
   "gui.sfmgui.node.output": "输出",
   "gui.sfmgui.node.if": "条件",
@@ -61,6 +65,7 @@
 
   "gui.sfmgui.field.every": "每隔",
   "gui.sfmgui.field.min_interval": "（最少 20 刻）",
+  "gui.sfmgui.field.min_interval_power": "（最少 1 刻，仅电力传输）",
   "gui.sfmgui.field.offset": "偏移",
   "gui.sfmgui.field.labels": "标签（逗号分隔）",
   "gui.sfmgui.field.quantity": "数量",
@@ -75,6 +80,7 @@
 
   "gui.sfmgui.toggle.unit": "单位：%s",
   "gui.sfmgui.toggle.global": "全局时钟：%s",
+  "gui.sfmgui.toggle.power_transfer": "传输电力：%s",
   "gui.sfmgui.toggle.round_robin": "轮询：%s",
   "gui.sfmgui.toggle.each": "每个：%s",
   "gui.sfmgui.toggle.empty_slots": "仅空槽位：%s",

@@ -33,6 +33,10 @@
   "gui.sfmgui.tool.output": "Output",
   "gui.sfmgui.tool.if": "If Condition",
   "gui.sfmgui.tool.forget": "Forget",
+  "gui.sfmgui.tool.power_blueprint": "Power Blueprint",
+  "gui.sfmgui.tool.item_blueprint": "Item Blueprint",
+  "gui.sfmgui.toast.undo": "Undo",
+  "gui.sfmgui.toast.redo": "Redo",
   "gui.sfmgui.node.input": "Input",
   "gui.sfmgui.node.output": "Output",
   "gui.sfmgui.node.if": "If",
@@ -51,6 +55,7 @@
 
   "gui.sfmgui.field.every": "Every",
   "gui.sfmgui.field.min_interval": "(min 20 ticks)",
+  "gui.sfmgui.field.min_interval_power": "(min 1 tick, power only)",
   "gui.sfmgui.field.offset": "Offset",
   "gui.sfmgui.field.labels": "Labels (comma separated)",
   "gui.sfmgui.field.quantity": "Quantity",
@@ -65,6 +70,7 @@
 
   "gui.sfmgui.toggle.unit": "Unit: %s",
   "gui.sfmgui.toggle.global": "Global clock: %s",
+  "gui.sfmgui.toggle.power_transfer": "Transfer power: %s",
   "gui.sfmgui.toggle.round_robin": "Round robin: %s",
   "gui.sfmgui.toggle.each": "Each: %s",
   "gui.sfmgui.toggle.empty_slots": "Empty slots only: %s",

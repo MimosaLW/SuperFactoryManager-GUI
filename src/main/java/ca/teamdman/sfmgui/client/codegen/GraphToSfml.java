@@ -52,12 +52,13 @@ public final class GraphToSfml {
         switch (trigger.kind) {
             case TIMER -> {
                 sb.append("EVERY ");
-                // SFM enforces a minimum trigger interval (default 20 ticks). In TICKS
-                // mode, clamp to 20 so the generated program never fails to compile.
-                // In SECONDS mode the effective ticks are interval*20, always >= 20.
+                // SFM's default minimum trigger interval is 20 ticks, but it drops to 1
+                // when the block does only Forge Energy I/O. In power-transfer mode we
+                // therefore allow down to 1 tick; otherwise clamp to 20 so a normal
+                // program always compiles. SECONDS mode is always >= 1 effective second.
                 int interval = trigger.interval;
                 if (trigger.unit != TriggerNode.TimeUnit.SECONDS) {
-                    interval = Math.max(20, interval);
+                    interval = Math.max(trigger.powerTransfer ? 1 : 20, interval);
                 } else {
                     interval = Math.max(1, interval);
                 }

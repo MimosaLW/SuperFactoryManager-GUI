@@ -57,7 +57,11 @@ public class NodeEditorScreen extends Screen {
         INPUT(1, "gui.sfmgui.tool.input"),
         OUTPUT(2, "gui.sfmgui.tool.output"),
         IF(3, "gui.sfmgui.tool.if"),
-        FORGET(17, "gui.sfmgui.tool.forget");
+        FORGET(17, "gui.sfmgui.tool.forget"),
+        // Power blueprint: a custom procedurally-drawn lightning icon (icon = -1 marks it).
+        POWER_BLUEPRINT(-1, "gui.sfmgui.tool.power_blueprint"),
+        // Item blueprint: a custom procedurally-drawn box/arrow icon (icon = -2 marks it).
+        ITEM_BLUEPRINT(-2, "gui.sfmgui.tool.item_blueprint");
 
         final int icon;
         final String nameKey;
@@ -102,6 +106,18 @@ public class NodeEditorScreen extends Screen {
     /** Guards against re-entrant snapshotting while restoring a snapshot. */
     private boolean restoring = false;
 
+    // ----- transient bottom-left toast (undo/redo/etc. feedback) -----
+    private @Nullable Component toastText = null;
+    private long toastStart = 0L;
+    private static final long TOAST_MS = 1600L;
+    private static final long TOAST_FADE_MS = 400L;
+
+    /** Flash a short message in the bottom-left corner that fades out on its own. */
+    private void showToast(Component text) {
+        toastText = text;
+        toastStart = System.currentTimeMillis();
+    }
+
     // ----- canvas transform -----
     private float scale = 1f;
     private int originX = 0, originY = 0;
@@ -124,6 +140,18 @@ public class NodeEditorScreen extends Screen {
      * click clears it. Only one node is armed at a time.
      */
     private @Nullable EditorNode pendingDelete = null;
+
+    /**
+     * #5: a wire segment armed for deletion by right-clicking its midpoint. The X
+     * button drawn at the midpoint, when left-clicked, breaks the chain: {@code child}
+     * and every sibling after it in the same container are moved to {@link #detached}.
+     * {@code parent} is the wire's upstream node (container head or previous sibling).
+     */
+    private @Nullable WireRef pendingWireDelete = null;
+
+    /** A single {@code parent -> child} wire within a container's chain. */
+    private record WireRef(EditorNode parent, StatementNode child, StatementContainer container) {
+    }
 
     /** #2: whether the top-bar labels dropdown is expanded. */
     private boolean labelsDropdownOpen = false;
@@ -154,6 +182,14 @@ public class NodeEditorScreen extends Screen {
 
     /** The field currently receiving keyboard input, or null. */
     private @Nullable CanvasField activeField = null;
+    /**
+     * A real (but off-screen, never painted) EditBox that receives keyboard + OS IME
+     * input for the active in-canvas field. Hand-rolled char handling can't compose
+     * CJK via the IME; delegating to a focused vanilla EditBox makes Chinese input
+     * work. It stays visible+active (required by EditBox#canConsumeInput) and is only
+     * moved off-screen so it isn't seen. Value/caret are mirrored to {@link #activeField}.
+     */
+    private @Nullable EditBox imeProxy = null;
     /** Screen-space program-name editor in the top bar (#3). */
     private @Nullable EditBox nameBox = null;
     /** Wall-clock time (ms) the caret blink cycle started; reset on edit so the caret stays lit right after typing. */
@@ -415,6 +451,21 @@ public class NodeEditorScreen extends Screen {
             }
         });
         this.addRenderableWidget(nameBox);
+
+        // Off-screen IME proxy: receives keyboard + OS IME for the active canvas field
+        // so CJK composition works. Kept visible+active (required to consume input),
+        // positioned far off-screen and never drawn. Its value/caret mirror to activeField.
+        imeProxy = new EditBox(this.font, -10000, -10000, 100, 16, Component.empty());
+        imeProxy.setMaxLength(256);
+        imeProxy.setBordered(false);
+        imeProxy.setResponder(v -> {
+            if (activeField != null && !v.equals(activeField.value)) {
+                activeField.set(v);
+                markDirty();
+            }
+        });
+        this.addRenderableWidget(imeProxy);
+
         rebuild();
     }
 
@@ -480,7 +531,7 @@ public class NodeEditorScreen extends Screen {
     private int menuContentHeight(EditorNode node, String menu) {
         int cw = NODE_W - 2 * PAD - 2;
         return switch (menu) {
-            case "Interval" -> PAD + 69 + PAD;                     // fixed numeric layout
+            case "Interval" -> PAD + 86 + PAD;                     // fixed rows incl. power-transfer toggle
             case "Labels" -> {
                 if (node instanceof IOStatementNode io) {
                     // field(wrap) + round_robin + each + [empty_slots]
@@ -562,6 +613,8 @@ public class NodeEditorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float pt) {
+        // A: keep the active field's caret in sync with the proxy before drawing.
+        syncActiveFieldFromProxy();
         // Flat classic gray background (no fixed canvas / black borders).
         renderFullscreenBackground(g);
 
@@ -602,6 +655,9 @@ public class NodeEditorScreen extends Screen {
 
         // #7: red outlines around nodes referencing the highlighted label
         renderLabelHighlights(g);
+
+        // #5: armed wire-delete X on top of the node layer (still in graph space)
+        renderWireDeleteOverlay(g);
 
         // restore depth state before drawing the rest of the UI
         g.flush();
@@ -651,7 +707,32 @@ public class NodeEditorScreen extends Screen {
             g.renderTooltip(this.font, Component.translatable(tk.nameKey), mx, my);
         }
 
+        renderToast(g);
+
         super.render(g, mx, my, pt);
+    }
+
+    /** #3: bottom-left transient toast; alpha fades out over the last {@link #TOAST_FADE_MS}. */
+    private void renderToast(GuiGraphics g) {
+        if (toastText == null) {
+            return;
+        }
+        long age = System.currentTimeMillis() - toastStart;
+        if (age >= TOAST_MS) {
+            toastText = null;
+            return;
+        }
+        long remain = TOAST_MS - age;
+        float a = remain >= TOAST_FADE_MS ? 1f : (remain / (float) TOAST_FADE_MS);
+        int alpha = Mth.clamp((int) (a * 255f), 0, 255);
+        int textW = this.font.width(toastText);
+        int pad = 4;
+        int boxX = 6;
+        int boxY = this.height - 6 - (this.font.lineHeight + pad * 2);
+        int boxW = textW + pad * 2;
+        int boxH = this.font.lineHeight + pad * 2;
+        g.fill(boxX, boxY, boxX + boxW, boxY + boxH, (alpha / 2 << 24) | 0x000000);
+        g.drawString(this.font, toastText, boxX + pad, boxY + pad, (alpha << 24) | 0xFFFFFF, false);
     }
 
     // ===== #2 labels dropdown =====
@@ -1042,8 +1123,60 @@ public class NodeEditorScreen extends Screen {
         for (ToolKind tk : ToolKind.values()) {
             int x = TOOLBAR_SCREEN_X;
             int y = TOOLBAR_SCREEN_Y + tk.ordinal() * (TOOLBAR_BTN + TOOLBAR_GAP);
-            ClassicTextures.toolbarButton(g, x, y, tk.icon, hovered == tk.ordinal());
+            boolean hover = hovered == tk.ordinal();
+            if (tk.icon < 0) {
+                // custom icon: draw just the frame, then a procedural glyph
+                ClassicTextures.toolbarFrame(g, x, y, hover);
+                if (tk == ToolKind.ITEM_BLUEPRINT) {
+                    drawItemBlueprintIcon(g, x + 1, y + 1);
+                } else {
+                    drawLightningIcon(g, x + 1, y + 1);
+                }
+            } else {
+                ClassicTextures.toolbarButton(g, x, y, tk.icon, hover);
+            }
         }
+    }
+
+    /** Draw a small yellow lightning bolt inside a 12px toolbar icon cell (power blueprint). */
+    private void drawLightningIcon(GuiGraphics g, int x, int y) {
+        int yellow = 0xFFFFD21A;
+        int shade = 0xFFC8960A;
+        // A blocky zig-zag bolt within the 12x12 cell (x..x+12, y..y+12).
+        // upper diagonal stroke
+        g.fill(x + 6, y + 1, x + 8, y + 3, yellow);
+        g.fill(x + 5, y + 3, x + 7, y + 5, yellow);
+        g.fill(x + 4, y + 5, x + 6, y + 6, yellow);
+        // middle cross bar
+        g.fill(x + 4, y + 5, x + 9, y + 6, yellow);
+        // lower diagonal stroke
+        g.fill(x + 6, y + 6, x + 8, y + 8, yellow);
+        g.fill(x + 5, y + 8, x + 7, y + 10, yellow);
+        g.fill(x + 4, y + 10, x + 6, y + 11, yellow);
+        // subtle shade on the right edge for depth
+        g.fill(x + 7, y + 3, x + 8, y + 5, shade);
+        g.fill(x + 6, y + 8, x + 7, y + 10, shade);
+    }
+
+    /** Draw a small crate + right-arrow inside a 12px toolbar icon cell (item blueprint). */
+    private void drawItemBlueprintIcon(GuiGraphics g, int x, int y) {
+        int crate = 0xFFB07B3A;   // wooden crate brown
+        int edge = 0xFF6E4A1E;    // darker crate edge
+        int arrow = 0xFF3A6EA5;   // blue transfer arrow
+        // crate body (left)
+        g.fill(x + 1, y + 3, x + 6, y + 10, crate);
+        // crate frame edges
+        g.fill(x + 1, y + 3, x + 6, y + 4, edge);
+        g.fill(x + 1, y + 9, x + 6, y + 10, edge);
+        g.fill(x + 1, y + 3, x + 2, y + 10, edge);
+        g.fill(x + 5, y + 3, x + 6, y + 10, edge);
+        // cross-brace
+        g.fill(x + 2, y + 6, x + 5, y + 7, edge);
+        // transfer arrow (right): shaft + head
+        g.fill(x + 6, y + 6, x + 10, y + 7, arrow);
+        g.fill(x + 8, y + 4, x + 9, y + 6, arrow);
+        g.fill(x + 8, y + 7, x + 9, y + 9, arrow);
+        g.fill(x + 9, y + 5, x + 10, y + 8, arrow);
     }
 
     private int hoverToolButton(double mx, double my) {
@@ -1101,25 +1234,67 @@ public class NodeEditorScreen extends Screen {
     }
 
     private void renderWires(GuiGraphics g) {
-        for (TriggerNode t : graph.triggers) {
-            renderContainerWires(g, t, t);
+        for (WireSeg seg : collectWireSegments()) {
+            int[] out = anchorGraph(seg.ref.parent(), true);
+            int[] in = anchorGraph(seg.ref.child(), false);
+            drawWire(g, out[0], out[1], in[0], in[1]);
         }
     }
 
-    private void renderContainerWires(GuiGraphics g, EditorNode parent, StatementContainer container) {
-        // #8: series/chain wiring — the container head connects to the FIRST child,
-        // then each child connects to the next, instead of fanning out from the head.
+    /**
+     * #5: draw the armed wire-delete X. Called AFTER all nodes so it is never hidden
+     * behind a node body. Runs inside the panned/scaled pose, so it draws in GRAPH space.
+     */
+    private void renderWireDeleteOverlay(GuiGraphics g) {
+        if (pendingWireDelete != null) {
+            int[] mid = wireMidGraph(pendingWireDelete);
+            if (mid != null) {
+                drawWireDeleteX(g, mid[0], mid[1]);
+            }
+        }
+    }
+
+    /** A wire segment plus its logical {@link WireRef} (parent -> child in a container). */
+    private record WireSeg(WireRef ref) {
+    }
+
+    /** Walk every trigger/branch chain and list its parent->child wire segments. */
+    private List<WireSeg> collectWireSegments() {
+        List<WireSeg> segs = new ArrayList<>();
+        for (TriggerNode t : graph.triggers) {
+            collectContainerSegments(t, t, segs);
+        }
+        return segs;
+    }
+
+    private void collectContainerSegments(EditorNode parent, StatementContainer container, List<WireSeg> out) {
         EditorNode prev = parent;
         for (StatementNode child : container.getChildStatements()) {
-            int[] out = anchorGraph(prev, true);
-            int[] in = anchorGraph(child, false);
-            drawWire(g, out[0], out[1], in[0], in[1]);
-            // Nested IF branches chain internally, each starting from the IF node.
+            out.add(new WireSeg(new WireRef(prev, child, container)));
             for (StatementContainer sub : EditorGraph.subContainers(child)) {
-                renderContainerWires(g, child, sub);
+                collectContainerSegments(child, sub, out);
             }
             prev = child;
         }
+    }
+
+    /** Graph-space midpoint of a wire (matches {@link #drawWire}'s horizontal run). */
+    private int @Nullable [] wireMidGraph(WireRef ref) {
+        // Only valid if the segment still exists in the live chain.
+        if (!ref.container().getChildStatements().contains(ref.child())) {
+            return null;
+        }
+        int[] out = anchorGraph(ref.parent(), true);
+        int[] in = anchorGraph(ref.child(), false);
+        int gx = (out[0] + in[0]) / 2;
+        int gy = (out[1] + in[1]) / 2; // the horizontal run sits at the mid Y
+        return new int[]{gx, gy};
+    }
+
+    /** Screen-space midpoint of a wire (for hit-testing against raw mouse coords). */
+    private int @Nullable [] wireMidScreen(WireRef ref) {
+        int[] g = wireMidGraph(ref);
+        return g == null ? null : new int[]{gx2sx(g[0]), gy2sy(g[1])};
     }
 
     private void drawWire(GuiGraphics g, int x1, int y1, int x2, int y2) {
@@ -1128,6 +1303,67 @@ public class NodeEditorScreen extends Screen {
         g.fill(x1, Math.min(y1, midY), x1 + 1, Math.max(y1, midY) + 1, color);
         g.fill(Math.min(x1, x2), midY, Math.max(x1, x2) + 1, midY + 1, color);
         g.fill(x2, Math.min(midY, y2), x2 + 1, Math.max(midY, y2) + 1, color);
+    }
+
+    /** #5: half-size (graph units) of the square wire-delete X button. */
+    private static final int WIRE_X_HALF = 5;
+
+    /** Draw the red "X" delete button centered on a wire midpoint (GRAPH space). */
+    private void drawWireDeleteX(GuiGraphics g, int cx, int cy) {
+        int x0 = cx - WIRE_X_HALF, y0 = cy - WIRE_X_HALF;
+        int x1 = cx + WIRE_X_HALF, y1 = cy + WIRE_X_HALF;
+        g.fill(x0, y0, x1, y1, 0xFF902020);
+        g.fill(x0, y0, x1, y0 + 1, 0xFFB04040); // top highlight
+        g.drawString(this.font, "\u2715", x0 + 1, y0 + 1, 0xFFFFFFFF, false);
+    }
+
+    /** Whether screen point (mx,my) is within the armed wire-delete X hitbox. */
+    private boolean hitWireDeleteX(double mx, double my) {
+        if (pendingWireDelete == null) {
+            return false;
+        }
+        int[] mid = wireMidScreen(pendingWireDelete);
+        if (mid == null) {
+            return false;
+        }
+        int r = Math.round(WIRE_X_HALF * unit());
+        return mx >= mid[0] - r && mx <= mid[0] + r
+                && my >= mid[1] - r && my <= mid[1] + r;
+    }
+
+    /** Find a wire whose midpoint is near (mx,my) in screen space, or null. */
+    private @Nullable WireRef wireMidAt(double mx, double my) {
+        int r = Math.max(6, Math.round(WIRE_X_HALF * unit()));
+        for (WireSeg seg : collectWireSegments()) {
+            int[] mid = wireMidScreen(seg.ref);
+            if (mid == null) {
+                continue;
+            }
+            if (mx >= mid[0] - r && mx <= mid[0] + r && my >= mid[1] - r && my <= mid[1] + r) {
+                return seg.ref;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * #5: break the chain at {@code ref}: move {@code child} and every sibling after
+     * it (within the same container) into {@link #detached}, severing everything from
+     * this wire onward. Series re-linking of the remaining prefix is unaffected.
+     */
+    private void breakWireAt(WireRef ref) {
+        pushUndo();
+        List<StatementNode> siblings = ref.container().getChildStatements();
+        int idx = siblings.indexOf(ref.child());
+        if (idx < 0) {
+            return;
+        }
+        List<StatementNode> tail = new ArrayList<>(siblings.subList(idx, siblings.size()));
+        siblings.subList(idx, siblings.size()).clear();
+        detached.addAll(tail);
+        pendingWireDelete = null;
+        markDirty();
+        rebuild();
     }
 
     private void renderNode(GuiGraphics g, EditorNode node, int mx, int my) {
@@ -1586,6 +1822,103 @@ public class NodeEditorScreen extends Screen {
         rebuild();
     }
 
+    /**
+     * #2: "Power blueprint" — one click spawns a ready-to-use power-transfer program:
+     * a 1-tick power timer chained to an INPUT and an OUTPUT, with the timer's Interval
+     * menu and both IO nodes' Labels + Sides menus opened by default.
+     */
+    private void createPowerBlueprint() {
+        pushUndo();
+        int[] sp = spawnPos();
+        int bx = sp[0], by = sp[1];
+
+        // 1-tick power-transfer timer
+        TriggerNode timer = new TriggerNode(bx, by, TriggerNode.Kind.TIMER);
+        timer.powerTransfer = true;
+        timer.interval = 1;
+        timer.collapsed = false;
+        timer.setOnlyMenu(0); // Interval menu open
+        graph.addTrigger(timer);
+
+        // INPUT forge_energy:: FROM *  — Labels(0) + Sides(2) open
+        IOStatementNode in = new IOStatementNode(bx + 160, by, StatementNode.Kind.INPUT);
+        in.collapsed = false;
+        in.limits.add(forgeEnergyLimit());
+        in.openMenus.clear();
+        in.openMenus.add(0);
+        in.openMenus.add(2);
+        timer.statements.add(in);
+
+        // OUTPUT forge_energy:: TO *  — chained after the input; Labels(0) + Sides(2) open
+        IOStatementNode out = new IOStatementNode(bx + 320, by, StatementNode.Kind.OUTPUT);
+        out.collapsed = false;
+        out.limits.add(forgeEnergyLimit());
+        out.openMenus.clear();
+        out.openMenus.add(0);
+        out.openMenus.add(2);
+        timer.statements.add(out);
+
+        graph.selected = timer;
+        markDirty();
+        rebuild();
+    }
+
+    /** A resource limit preset to the bare Forge-Energy type (power). */
+    private static ResourceLimitData forgeEnergyLimit() {
+        ResourceLimitData lim = new ResourceLimitData();
+        lim.resources = "forge_energy::";
+        return lim;
+    }
+
+    /**
+     * #4: "Item blueprint" — one click spawns a general item-moving program:
+     * a plain 20-tick timer chained to INPUT -> OUTPUT -> FORGET. The two IO nodes
+     * open their Labels(0) + Filter(1) + Sides(2) menus and the FORGET opens its
+     * Note(0) menu, so every knob a normal item route needs is visible up front.
+     */
+    private void createItemBlueprint() {
+        pushUndo();
+        int[] sp = spawnPos();
+        int bx = sp[0], by = sp[1];
+
+        // Plain 20-tick timer (item transfer keeps the vanilla minimum interval).
+        TriggerNode timer = new TriggerNode(bx, by, TriggerNode.Kind.TIMER);
+        timer.powerTransfer = false;
+        timer.interval = 20;
+        timer.collapsed = false;
+        timer.setOnlyMenu(0); // Interval menu open
+        graph.addTrigger(timer);
+
+        // INPUT FROM *  — Labels(0) + Filter(1) + Sides(2) open
+        IOStatementNode in = new IOStatementNode(bx + 160, by, StatementNode.Kind.INPUT);
+        in.collapsed = false;
+        in.openMenus.clear();
+        in.openMenus.add(0);
+        in.openMenus.add(1);
+        in.openMenus.add(2);
+        timer.statements.add(in);
+
+        // OUTPUT TO *  — chained after the input; Labels(0) + Filter(1) + Sides(2) open
+        IOStatementNode out = new IOStatementNode(bx + 320, by, StatementNode.Kind.OUTPUT);
+        out.collapsed = false;
+        out.openMenus.clear();
+        out.openMenus.add(0);
+        out.openMenus.add(1);
+        out.openMenus.add(2);
+        timer.statements.add(out);
+
+        // FORGET  — chained last; Note(0) menu open
+        ForgetStatementNode forget = new ForgetStatementNode(bx + 480, by);
+        forget.collapsed = false;
+        forget.openMenus.clear();
+        forget.openMenus.add(0);
+        timer.statements.add(forget);
+
+        graph.selected = timer;
+        markDirty();
+        rebuild();
+    }
+
     private @Nullable StatementContainer resolveContainer() {
         EditorNode sel = graph.selected;
         if (sel instanceof TriggerNode t) {
@@ -1614,9 +1947,14 @@ public class NodeEditorScreen extends Screen {
         iconRows.clear();
         activeField = null;
         this.clearWidgets();
-        // clearWidgets() also drops the top-bar name box; re-register it.
+        // clearWidgets() also drops the top-bar name box + IME proxy; re-register them.
         if (nameBox != null) {
             this.addRenderableWidget(nameBox);
+        }
+        if (imeProxy != null) {
+            imeProxy.setValue("");
+            imeProxy.setFocused(false);
+            this.addRenderableWidget(imeProxy);
         }
         // Build interactive content for every node that has an open menu, so that
         // opening a menu is remembered per node and multiple can be open at once (#5).
@@ -1735,16 +2073,32 @@ public class NodeEditorScreen extends Screen {
             case "Interval" -> {
                 if (node instanceof TriggerNode t) {
                     // Rows laid out with no vertical overlap (see menuContentHeight):
-                    // every+field @0, min-hint @13, unit @24, global @40, offset @58.
+                    // every+field @0, min-hint @13, unit @24, global @40, offset @58, power @74.
                     addLabel(gx, gy, Loc.tr("gui.sfmgui.field.every"));
                     addNumberField(gx + 34, gy - 1, 30, String.valueOf(t.interval), v -> t.interval = Math.max(1, parseInt(v, t.interval)));
-                    addLabel(gx, gy + 13, Loc.tr("gui.sfmgui.field.min_interval"));
+                    // hint reflects the current minimum (1 in power-transfer mode, else 20)
+                    addLabel(gx, gy + 13, t.powerTransfer
+                            ? Loc.tr("gui.sfmgui.field.min_interval_power")
+                            : Loc.tr("gui.sfmgui.field.min_interval"));
                     addToggle(gx, gy + 24, cw, () -> Loc.tr("gui.sfmgui.toggle.unit",
                             t.unit == TriggerNode.TimeUnit.SECONDS ? Loc.tr("gui.sfmgui.unit.seconds") : Loc.tr("gui.sfmgui.unit.ticks")),
                             () -> t.unit = t.unit == TriggerNode.TimeUnit.TICKS ? TriggerNode.TimeUnit.SECONDS : TriggerNode.TimeUnit.TICKS);
                     addToggle(gx, gy + 40, cw, () -> Loc.tr("gui.sfmgui.toggle.global", onOff(t.global)), () -> t.global = !t.global);
                     addLabel(gx, gy + 58, Loc.tr("gui.sfmgui.field.offset"));
                     addNumberField(gx + 34, gy + 57, 30, String.valueOf(t.offset), v -> t.offset = Math.max(0, parseInt(v, t.offset)));
+                    // B: power-transfer toggle — lifts the 20-tick minimum to 1 (default 1).
+                    addToggle(gx, gy + 74, cw, () -> Loc.tr("gui.sfmgui.toggle.power_transfer", onOff(t.powerTransfer)), () -> {
+                        t.powerTransfer = !t.powerTransfer;
+                        if (t.powerTransfer) {
+                            // entering power mode: default to the 1-tick minimum
+                            if (t.interval >= 20) {
+                                t.interval = 1;
+                            }
+                        } else if (t.interval < 20) {
+                            // leaving power mode: bounce back so a normal program stays valid
+                            t.interval = 20;
+                        }
+                    });
                 }
             }
             case "Labels" -> {
@@ -2028,7 +2382,19 @@ public class NodeEditorScreen extends Screen {
         }
         int tool = hoverToolButton(mx, my);
         if (tool >= 0 && button == 0) {
-            createNode(ToolKind.values()[tool]);
+            ToolKind tk = ToolKind.values()[tool];
+            if (tk == ToolKind.POWER_BLUEPRINT) {
+                createPowerBlueprint();
+            } else if (tk == ToolKind.ITEM_BLUEPRINT) {
+                createItemBlueprint();
+            } else {
+                createNode(tk);
+            }
+            return true;
+        }
+        // #5: left-click the armed wire-delete X breaks the chain there.
+        if (button == 0 && hitWireDeleteX(mx, my)) {
+            breakWireAt(pendingWireDelete);
             return true;
         }
         if (button == 0) {
@@ -2056,6 +2422,7 @@ public class NodeEditorScreen extends Screen {
                         int relY = (int) ((my - sy) / unit()) - 2;
                         f.caret = caretForClick(f, relX, relY);
                         f.clearSelection();
+                        beginFieldEditing(f);
                         return true;
                     }
                 }
@@ -2064,7 +2431,7 @@ public class NodeEditorScreen extends Screen {
                         continue;
                     }
                     if (hoverControl(c, mx, my)) {
-                        activeField = null;
+                        endFieldEditing();
                         c.onClick.run();
                         return true;
                     }
@@ -2073,7 +2440,7 @@ public class NodeEditorScreen extends Screen {
             // Nubs sit just outside node bodies; test after in-body controls.
             NubHit nub = nubAt(mx, my);
             if (nub != null) {
-                activeField = null;
+                endFieldEditing();
                 handleNubClick(nub.node(), nub.isOutput());
                 return true;
             }
@@ -2110,12 +2477,13 @@ public class NodeEditorScreen extends Screen {
                 draggingNode = n;
                 dragDX = sx2gx(mx) - n.x;
                 dragDY = sy2gy(my) - n.y;
-                activeField = null;
+                endFieldEditing();
                 rebuild();
                 return true;
             }
             // Clicking empty canvas clears any armed delete.
             pendingDelete = null;
+            pendingWireDelete = null;
             if (graph.selected != null) {
                 graph.selected = null;
                 rebuild();
@@ -2133,12 +2501,22 @@ public class NodeEditorScreen extends Screen {
                     // #1: right-click no longer deletes directly; it arms the
                     // delete-confirm X on this node (right-click again toggles it off).
                     pendingDelete = (pendingDelete == hit) ? null : hit;
+                    pendingWireDelete = null;
                     graph.selected = hit;
                     rebuild();
                     return true;
                 }
+                // #5: right-click on a wire midpoint arms that wire's delete-X.
+                WireRef wire = wireMidAt(mx, my);
+                if (wire != null) {
+                    pendingWireDelete = (pendingWireDelete != null
+                            && pendingWireDelete.child() == wire.child()) ? null : wire;
+                    pendingDelete = null;
+                    return true;
+                }
                 // right-click on empty canvas clears any armed delete
                 pendingDelete = null;
+                pendingWireDelete = null;
             }
             panning = true;
             panStartMX = mx;
@@ -2255,94 +2633,48 @@ public class NodeEditorScreen extends Screen {
 
     @Override
     public boolean keyPressed(int key, int scancode, int mods) {
-        // route to the active in-canvas text field first
+        // A: while a canvas field is being edited, ESC/ENTER end editing; every other
+        // key (backspace/delete/arrows/Home/End/Ctrl-combos + IME composition) is
+        // handled natively by the focused imeProxy via super.keyPressed.
         if (activeField != null) {
-            // keep the caret solid immediately after any edit/navigation keystroke
             caretBlinkStart = System.currentTimeMillis();
-            CanvasField f = activeField;
-            boolean ctrl = (mods & GLFW.GLFW_MOD_CONTROL) != 0;
-            boolean shift = (mods & GLFW.GLFW_MOD_SHIFT) != 0;
-
             if (key == GLFW.GLFW_KEY_ESCAPE || key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
-                activeField = null;
+                endFieldEditing();
                 return true;
             }
-            // ---- clipboard / select-all shortcuts ----
-            if (ctrl && key == GLFW.GLFW_KEY_A) {
-                f.selAnchor = 0;
-                f.caret = f.value.length();
-                return true;
-            }
-            if (ctrl && key == GLFW.GLFW_KEY_C) {
-                if (f.hasSelection()) {
-                    Minecraft.getInstance().keyboardHandler.setClipboard(
-                            f.value.substring(f.selMin(), f.selMax()));
+            // C: intercept undo/redo even mid-edit so a global history step wins over
+            // the field. Ctrl+A/C/V/X are NOT caught here — they fall through to the
+            // focused imeProxy (super.keyPressed) for select-all/clipboard handling.
+            if ((mods & GLFW.GLFW_MOD_CONTROL) != 0 && key == GLFW.GLFW_KEY_Z) {
+                endFieldEditing();
+                if (undo()) {
+                    showToast(Component.translatable("gui.sfmgui.toast.undo"));
                 }
                 return true;
             }
-            if (ctrl && key == GLFW.GLFW_KEY_X) {
-                if (f.hasSelection()) {
-                    Minecraft.getInstance().keyboardHandler.setClipboard(
-                            f.value.substring(f.selMin(), f.selMax()));
-                    deleteSelection(f);
+            if ((mods & GLFW.GLFW_MOD_CONTROL) != 0 && key == GLFW.GLFW_KEY_Y) {
+                endFieldEditing();
+                if (redo()) {
+                    showToast(Component.translatable("gui.sfmgui.toast.redo"));
                 }
                 return true;
             }
-            if (ctrl && key == GLFW.GLFW_KEY_V) {
-                String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
-                insertActive(clip);
-                return true;
-            }
-            if (key == GLFW.GLFW_KEY_BACKSPACE) {
-                if (f.hasSelection()) {
-                    deleteSelection(f);
-                } else if (f.caret > 0) {
-                    String v = f.value;
-                    f.set(v.substring(0, f.caret - 1) + v.substring(f.caret));
-                    f.caret = Math.max(0, f.caret - 1);
-                    markDirty();
-                }
-                return true;
-            }
-            if (key == GLFW.GLFW_KEY_DELETE) {
-                if (f.hasSelection()) {
-                    deleteSelection(f);
-                } else if (f.caret < f.value.length()) {
-                    String v = f.value;
-                    f.set(v.substring(0, f.caret) + v.substring(f.caret + 1));
-                    markDirty();
-                }
-                return true;
-            }
-            if (key == GLFW.GLFW_KEY_LEFT) {
-                moveCaret(f, Math.max(0, f.caret - 1), shift);
-                return true;
-            }
-            if (key == GLFW.GLFW_KEY_RIGHT) {
-                moveCaret(f, Math.min(f.value.length(), f.caret + 1), shift);
-                return true;
-            }
-            if (key == GLFW.GLFW_KEY_HOME) {
-                moveCaret(f, 0, shift);
-                return true;
-            }
-            if (key == GLFW.GLFW_KEY_END) {
-                moveCaret(f, f.value.length(), shift);
-                return true;
-            }
-            // consume other keys while editing (except ESC handled above)
-            return true;
+            return super.keyPressed(key, scancode, mods);
         }
         if (super.keyPressed(key, scancode, mods)) {
             return true;
         }
         // ---- undo / redo (no field focused) ----
         if ((mods & GLFW.GLFW_MOD_CONTROL) != 0 && key == GLFW.GLFW_KEY_Z) {
-            undo();
+            if (undo()) {
+                showToast(Component.translatable("gui.sfmgui.toast.undo"));
+            }
             return true;
         }
         if ((mods & GLFW.GLFW_MOD_CONTROL) != 0 && key == GLFW.GLFW_KEY_Y) {
-            redo();
+            if (redo()) {
+                showToast(Component.translatable("gui.sfmgui.toast.redo"));
+            }
             return true;
         }
         if (key == GLFW.GLFW_KEY_ESCAPE) {
@@ -2360,57 +2692,44 @@ public class NodeEditorScreen extends Screen {
         return false;
     }
 
-    /** Move the caret to {@code to}; extend selection if shift held, else drop it. */
-    private void moveCaret(CanvasField f, int to, boolean shift) {
-        if (shift) {
-            if (f.selAnchor < 0) {
-                f.selAnchor = f.caret;
-            }
-            f.caret = to;
-        } else {
-            f.caret = to;
-            f.clearSelection();
-        }
-    }
-
-    /** Delete the current selection, collapsing the caret to its start. */
-    private void deleteSelection(CanvasField f) {
-        if (!f.hasSelection()) {
-            return;
-        }
-        int a = f.selMin(), b = f.selMax();
-        f.set(f.value.substring(0, a) + f.value.substring(b));
-        f.caret = a;
-        f.clearSelection();
-        markDirty();
-    }
-
     @Override
     public boolean charTyped(char c, int mods) {
-        if (activeField != null && c != 0 && c >= 32 && c != 127) {
+        // A: typed characters (incl. IME-composed CJK) go to the focused imeProxy.
+        if (activeField != null) {
             caretBlinkStart = System.currentTimeMillis();
-            insertActive(String.valueOf(c));
-            return true;
         }
         return super.charTyped(c, mods);
     }
 
-    private void insertActive(String text) {
-        if (activeField == null || text == null || text.isEmpty()) {
-            return;
+    // ===== A: canvas-field editing delegated to the off-screen imeProxy =====
+
+    /** Start editing a canvas field: mirror its value/caret into the proxy and focus it. */
+    private void beginFieldEditing(CanvasField f) {
+        activeField = f;
+        if (imeProxy != null) {
+            imeProxy.setValue(f.value);
+            imeProxy.setCursorPosition(Math.min(f.caret, f.value.length()));
+            imeProxy.setHighlightPos(imeProxy.getCursorPosition());
+            this.setFocused(imeProxy);
+            imeProxy.setFocused(true);
         }
-        // Replace any active selection first.
-        if (activeField.hasSelection()) {
-            int a = activeField.selMin(), b = activeField.selMax();
-            activeField.value = activeField.value.substring(0, a) + activeField.value.substring(b);
-            activeField.caret = a;
-            activeField.clearSelection();
+    }
+
+    /** Stop editing: drop focus from the proxy. */
+    private void endFieldEditing() {
+        activeField = null;
+        if (imeProxy != null) {
+            imeProxy.setFocused(false);
         }
-        String v = activeField.value;
-        int caret = Math.min(activeField.caret, v.length());
-        activeField.set(v.substring(0, caret) + text + v.substring(caret));
-        activeField.caret = caret + text.length();
-        markDirty();
+        this.setFocused(null);
+    }
+
+    /** Mirror the proxy's caret back to the active field each frame (for caret rendering). */
+    private void syncActiveFieldFromProxy() {
+        if (activeField != null && imeProxy != null) {
+            // value is mirrored via the proxy's responder; keep the caret in sync here.
+            activeField.caret = Math.min(imeProxy.getCursorPosition(), activeField.value.length());
+        }
     }
 
     /** Caret index within {@code value} nearest to graph-pixel x (by character midpoint). */
@@ -2612,20 +2931,22 @@ public class NodeEditorScreen extends Screen {
         return LayoutMemory.appendTo(base, graph, detached, panX, panY, zoom);
     }
 
-    private void undo() {
+    private boolean undo() {
         if (undoStack.isEmpty()) {
-            return;
+            return false;
         }
         redoStack.push(currentSnapshot());
         restoreFrom(undoStack.pop());
+        return true;
     }
 
-    private void redo() {
+    private boolean redo() {
         if (redoStack.isEmpty()) {
-            return;
+            return false;
         }
         undoStack.push(currentSnapshot());
         restoreFrom(redoStack.pop());
+        return true;
     }
 
     /** Rebuild the graph/camera from a snapshot and refresh the UI. */
@@ -2650,6 +2971,10 @@ public class NodeEditorScreen extends Screen {
             }
             dirty = true;
             activeField = null;
+            // Parsed nodes are fresh instances, so any armed delete refs are stale.
+            pendingDelete = null;
+            pendingWireDelete = null;
+            connectSource = null;
             rebuild();
         } finally {
             restoring = false;

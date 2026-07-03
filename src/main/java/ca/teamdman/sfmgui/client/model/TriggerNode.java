@@ -32,6 +32,12 @@ public class TriggerNode extends EditorNode implements StatementContainer {
     public boolean global = false;
     /** Phase offset ({@code EVERY 20 PLUS <offset> TICKS}); 0 disables. */
     public int offset = 0;
+    /**
+     * Power-transfer mode: SFM allows a timer down to 1 tick when the block does
+     * only Forge Energy I/O. When enabled the editor lifts the usual 20-tick
+     * minimum to 1. Purely a UI mode — it does not change the emitted SFML syntax.
+     */
+    public boolean powerTransfer = false;
 
     /** Statements executed, in order, inside this trigger's block. */
     public final List<StatementNode> statements = new ArrayList<>();

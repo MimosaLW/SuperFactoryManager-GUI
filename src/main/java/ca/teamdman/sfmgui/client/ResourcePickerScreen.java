@@ -49,6 +49,21 @@ public class ResourcePickerScreen extends Screen {
     private static final int CELL = 18;
     private static final int COLS = 12;
 
+    // Quick resource-type tags shown above the grid. Clicking one fills the bare
+    // type placeholder (e.g. "item::") and closes the picker. Labels are bilingual.
+    private static final int TAG_Y = 56;
+    private static final int TAG_H = 16;
+    private static final int TAG_GAP = 4;
+    private static final int TAG_PAD = 8;
+    private record TypeTag(String sfmlId, String label) {
+    }
+    private static final List<TypeTag> TYPE_TAGS = List.of(
+            new TypeTag("item::", "物品 Item"),
+            new TypeTag("fluid::", "流体 Fluid"),
+            new TypeTag("forge_energy::", "能量 Forge Energy"),
+            new TypeTag("chemical::", "化学品 Chemical")
+    );
+
     private final Consumer<String> onPick;
     private final Screen previousScreen;
 
@@ -103,7 +118,28 @@ public class ResourcePickerScreen extends Screen {
     }
 
     private int gridTop() {
-        return 60;
+        // below the quick-type tag row
+        return TAG_Y + TAG_H + 6;
+    }
+
+    /**
+     * Screen-space [x, width] of each quick-type tag, laid out as a centered row.
+     * Render and click hit-testing share this so they never drift apart.
+     */
+    private int[][] tagLayout() {
+        int[][] out = new int[TYPE_TAGS.size()][2];
+        int totalW = 0;
+        for (int i = 0; i < TYPE_TAGS.size(); i++) {
+            int tw = this.font.width(TYPE_TAGS.get(i).label()) + TAG_PAD;
+            out[i][1] = tw;
+            totalW += tw + (i > 0 ? TAG_GAP : 0);
+        }
+        int x = Math.max(4, this.width / 2 - totalW / 2);
+        for (int i = 0; i < TYPE_TAGS.size(); i++) {
+            out[i][0] = x;
+            x += out[i][1] + TAG_GAP;
+        }
+        return out;
     }
 
     private int visibleRows() {
@@ -234,7 +270,20 @@ public class ResourcePickerScreen extends Screen {
         super.render(graphics, mx, my, partialTick);
         graphics.drawCenteredString(this.font, this.title, this.width / 2, 16, 0xFFFFFFFF);
 
+        renderTypeTags(graphics, mx, my);
         renderGrid(graphics, mx, my);
+    }
+
+    /** Draw the centered row of quick resource-type tags above the grid. */
+    private void renderTypeTags(GuiGraphics graphics, int mx, int my) {
+        int[][] tl = tagLayout();
+        for (int i = 0; i < TYPE_TAGS.size(); i++) {
+            int tx = tl[i][0], tw = tl[i][1];
+            boolean hover = mx >= tx && mx < tx + tw && my >= TAG_Y && my < TAG_Y + TAG_H;
+            graphics.fill(tx, TAG_Y, tx + tw, TAG_Y + TAG_H, hover ? 0xFF4A4A5A : 0xFF2A2A33);
+            graphics.drawCenteredString(this.font, TYPE_TAGS.get(i).label(),
+                    tx + tw / 2, TAG_Y + 4, hover ? 0xFFFFFFFF : 0xFFCCE0FF);
+        }
     }
 
     private void renderGrid(GuiGraphics graphics, int mx, int my) {
@@ -308,6 +357,17 @@ public class ResourcePickerScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
         if (super.mouseClicked(mx, my, button)) return true;
+
+        // quick resource-type tags (above the grid): fill the bare type and close
+        int[][] tl = tagLayout();
+        for (int i = 0; i < TYPE_TAGS.size(); i++) {
+            int tx = tl[i][0], tw = tl[i][1];
+            if (mx >= tx && mx < tx + tw && my >= TAG_Y && my < TAG_Y + TAG_H) {
+                onPick.accept(TYPE_TAGS.get(i).sfmlId());
+                Minecraft.getInstance().setScreen(previousScreen);
+                return true;
+            }
+        }
 
         int left = gridLeft();
         int top = gridTop();
