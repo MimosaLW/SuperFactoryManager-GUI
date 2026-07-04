@@ -88,11 +88,11 @@ public class NodeEditorScreen extends Screen {
     private static final int BODY_PAD_TOP = 6;
 
     // ----- persistence context -----
-    private final String initialProgram;
+    private String initialProgram;
     private final Consumer<String> saveWriter;
     private final @Nullable Screen previousScreen;
     private final EditorGraph graph;
-    private final @Nullable String importWarning;
+    private @Nullable String importWarning;
 
     /** True once the user makes any real change; gates saving so we never overwrite the disk with an unedited/failed parse. */
     private boolean dirty = false;
@@ -1384,6 +1384,13 @@ public class NodeEditorScreen extends Screen {
         NodeLayout L = layout(node);
         int x = node.x, y = node.y;
         ClassicTextures.nodeFrameSized(g, x, y, L.width, L.height);
+
+        // #1: tint statement nodes that are wired into a trigger chain a light
+        // grey-green, so a "normal" (connected) node reads differently from a
+        // floating/detached one. Triggers are roots and are never tinted.
+        if (isConnected(node)) {
+            g.fill(x + 1, y + 1, x + L.width - 1, y + L.height - 1, 0x3055AA55);
+        }
 
         // #6: title + summary as ONE component, drawn in a single pass so both use
         // the same font metrics/baseline (no size/spacing mismatch between the two).
@@ -2904,6 +2911,18 @@ public class NodeEditorScreen extends Screen {
         return list;
     }
 
+    /**
+     * #1: whether a node is "connected" — i.e. a statement wired into a trigger
+     * chain (has an owning container). Trigger roots and floating/detached
+     * statements are not connected.
+     */
+    private boolean isConnected(EditorNode node) {
+        if (node instanceof StatementNode s) {
+            return graph.findOwningContainer(s) != null;
+        }
+        return false;
+    }
+
     // ===== persistence =====
     private String generateSfml() {
         // Guard against destroying an unparseable disk: if the source could not be
@@ -2926,21 +2945,21 @@ public class NodeEditorScreen extends Screen {
     }
 
     /**
-     * #task4: hand off to SFM's own text (code) editor. The current graph is emitted
-     * as SFML (with our layout/camera comments, which SFM ignores) and handed to SFM's
-     * program editor via an open-context that shares this editor's {@link #saveWriter},
-     * so pressing "Done" there saves back to the same manager. SFM is a compile-time
-     * dependency present at runtime, so these classes are safe to reference directly.
+     * #task4/#5/#6: hand off to SFM's own text (code) editor. We build the editor
+     * screen ourselves (via {@code createProgramEditScreen(...).asScreen()}) and show
+     * it with {@code setScreen} — NOT SFM's push/replace helper — so the screen stack
+     * stays fully under our control (opening the resource picker and returning no
+     * longer loses this editor's background). Our {@link NodeEditorCodeContext} returns
+     * here on close and reloads the edited SFML back into the graph, so code edits are
+     * reflected as nodes. SFM is present at runtime, so these refs are safe.
      */
     private void openCodeEditor() {
         String sfml = generateSfml();
         try {
-            var ctx = new ca.teamdman.sfm.client.text_editor.SFMTextEditScreenDiskOpenContext(
-                    sfml,
-                    ca.teamdman.sfm.common.label.LabelPositionHolder.empty(),
-                    saveWriter
-            );
-            ca.teamdman.sfm.client.screen.SFMScreenChangeHelpers.showProgramEditScreen(ctx);
+            NodeEditorCodeContext ctx = new NodeEditorCodeContext(sfml, this, saveWriter);
+            Screen editor = ca.teamdman.sfm.client.screen.SFMScreenChangeHelpers
+                    .createProgramEditScreen(ctx).asScreen();
+            Minecraft.getInstance().setScreen(editor);
         } catch (Throwable t) {
             SFMGui.LOGGER.error("Failed to open SFM code editor", t);
         }
@@ -3019,6 +3038,55 @@ public class NodeEditorScreen extends Screen {
             pendingWireDelete = null;
             connectSource = null;
             rebuild();
+        } finally {
+            restoring = false;
+        }
+    }
+
+
+    /**
+     * #6: reload the visual graph from externally-edited SFML (e.g. after the user
+     * edits the program in SFM's code editor and returns). Reparses the text into the
+     * graph in place, applies any embedded layout, resolves overlaps for nodes that
+     * came from plain code (no layout comments), and refreshes the UI.
+     */
+    public void reloadFromSfml(String sfml) {
+        String text = sfml == null ? "" : sfml;
+        restoring = true;
+        try {
+            EditorGraph g = SfmlToGraph.parse(text);
+            LayoutMemory.apply(text, g);
+            graph.name = g.name;
+            graph.triggers.clear();
+            graph.triggers.addAll(g.triggers);
+            graph.selected = null;
+            detached.clear();
+            float[] cam = LayoutMemory.readCamera(text);
+            if (cam != null) {
+                panX = cam[0];
+                panY = cam[1];
+                zoom = Mth.clamp(cam[2], ZOOM_MIN, ZOOM_MAX);
+            }
+            // Reflect the new source as the baseline and recompute parse state.
+            initialProgram = text;
+            importWarning = computeImportWarning(text);
+            parseFailed = false;
+            if (!text.isBlank()) {
+                boolean compiles = canonical(text) != null;
+                if (!compiles || graph.triggers.isEmpty()) {
+                    parseFailed = true;
+                }
+            }
+            dirty = true;
+            activeField = null;
+            pendingDelete = null;
+            pendingWireDelete = null;
+            connectSource = null;
+            rebuild();
+            // Code from the text editor usually carries no layout comments; spread any
+            // overlapping nodes so they're all readable (font is ready post-init).
+            resolveOverlaps();
+            layoutCache.clear();
         } finally {
             restoring = false;
         }
