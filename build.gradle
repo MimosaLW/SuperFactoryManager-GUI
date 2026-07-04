@@ -20,6 +20,8 @@ repositories {
     maven { url = 'https://jitpack.io' }
     // Mekanism maven (for API jar)
     maven { url = 'https://modmaven.dev/' }
+    // BlameJared maven (for the JEI API jar)
+    maven { url = 'https://maven.blamejared.com' }
 }
 
 // The SFM mod jar this addon builds against.
@@ -27,6 +29,13 @@ def sfmJar = files(project.sfm_jar)
 
 // Mekanism API jar (compileOnly — only needed for chemical icon rendering at compile time).
 def mekApiCoords = "mekanism:Mekanism:1.21.1-10.7.4.60:api"
+
+// JEI API (compileOnly — optional integration for item enumeration/rendering; guarded
+// at runtime so the addon works with or without JEI installed). The API is split into a
+// common part (IModPlugin, runtime, ingredients, constants) and a neoforge part.
+def jeiVersion = "19.21.0.247"
+def jeiCommonApi = "mezz.jei:jei-1.21.1-common-api:${jeiVersion}"
+def jeiNeoApi = "mezz.jei:jei-1.21.1-neoforge-api:${jeiVersion}"
 
 // PinIn: standalone Chinese pinyin matching library (bundled so pinyin search
 // works without requiring JustEnoughCharacters). Depends on fastutil, already
@@ -40,6 +49,9 @@ dependencies {
     compileOnly sfmJar
     // Mekanism API: compile-only for chemical icon rendering; guarded at runtime.
     compileOnly(mekApiCoords) { transitive = false }
+    // JEI API: compile-only optional integration; guarded at runtime.
+    compileOnly(jeiCommonApi) { transitive = false }
+    compileOnly(jeiNeoApi) { transitive = false }
     // Make SFM classes available when running tests (they use SFM's SFML parser/AST).
     testImplementation sfmJar
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'

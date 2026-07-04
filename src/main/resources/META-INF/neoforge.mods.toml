@@ -30,3 +30,13 @@ type="required"
 versionRange="${minecraft_version_range}"
 ordering="AFTER"
 side="BOTH"
+
+# Optional JEI integration: when present, the resource picker uses JEI's item list
+# and renderer. Load after JEI (client only) so our plugin's runtime is ready.
+[[dependencies.${mod_id}]]
+modId="jei"
+type="optional"
+versionRange="[19.0,)"
+ordering="AFTER"
+side="CLIENT"
+

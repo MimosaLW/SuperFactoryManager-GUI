@@ -99,11 +99,25 @@ public final class ResourceIndex {
         List<Entry> entries = new ArrayList<>();
 
         // --- Items (icon) ---
-        for (Item item : BuiltInRegistries.ITEM) {
-            ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
-            ItemStack stack = new ItemStack(item);
-            if (stack.isEmpty()) continue;
-            entries.add(Entry.item(id, stack));
+        // Prefer JEI's display-ready ingredient list when JEI is installed: it renders
+        // correctly (no blank icons) and covers subtypes/variants. Fall back to the
+        // registry otherwise. The sfmlId is always the item's registry id so SFML
+        // matching is unaffected by which source we used.
+        List<ItemStack> jeiStacks = JeiCompat.itemStacksOrNull();
+        if (jeiStacks != null && !jeiStacks.isEmpty()) {
+            for (ItemStack stack : jeiStacks) {
+                if (stack == null || stack.isEmpty()) continue;
+                ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+                if (id == null) continue;
+                entries.add(Entry.item(id, stack.copy()));
+            }
+        } else {
+            for (Item item : BuiltInRegistries.ITEM) {
+                ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
+                ItemStack stack = new ItemStack(item);
+                if (stack.isEmpty()) continue;
+                entries.add(Entry.item(id, stack));
+            }
         }
 
         // --- Fluids (tinted sprite) ---
@@ -189,7 +203,7 @@ public final class ResourceIndex {
     /** Draw a single entry's icon in a 16x16 box at (x,y): item model, sprite, or text. */
     public static void renderIcon(GuiGraphics graphics, net.minecraft.client.gui.Font font, Entry entry, int x, int y) {
         switch (entry.kind()) {
-            case ITEM -> graphics.renderItem(entry.stack(), x, y);
+            case ITEM -> JeiCompat.renderItem(graphics, entry.stack(), x, y);
             case SPRITE -> {
                 if (entry.sprite() != null) {
                     renderSpriteIcon(graphics, x, y, entry.sprite(), entry.tint());

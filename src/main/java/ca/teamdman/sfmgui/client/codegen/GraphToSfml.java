@@ -40,7 +40,7 @@ public final class GraphToSfml {
 
     public static String generate(EditorGraph graph) {
         StringBuilder sb = new StringBuilder();
-        sb.append("NAME ").append(quote(graph.name)).append("\n\n");
+        sb.append("name ").append(quote(graph.name)).append("\n\n");
         for (TriggerNode trigger : graph.triggers) {
             appendTrigger(sb, trigger);
             sb.append("\n");
@@ -51,7 +51,7 @@ public final class GraphToSfml {
     private static void appendTrigger(StringBuilder sb, TriggerNode trigger) {
         switch (trigger.kind) {
             case TIMER -> {
-                sb.append("EVERY ");
+                sb.append("every ");
                 // SFM's default minimum trigger interval is 20 ticks, but it drops to 1
                 // when the block does only Forge Energy I/O. In power-transfer mode we
                 // therefore allow down to 1 tick; otherwise clamp to 20 so a normal
@@ -64,19 +64,19 @@ public final class GraphToSfml {
                 }
                 sb.append(interval);
                 if (trigger.global) {
-                    sb.append(" GLOBAL");
+                    sb.append(" global");
                 }
                 if (trigger.offset > 0) {
-                    sb.append(" PLUS ").append(trigger.offset);
+                    sb.append(" plus ").append(trigger.offset);
                 }
                 sb.append(" ");
-                sb.append(trigger.unit == TriggerNode.TimeUnit.SECONDS ? "SECONDS" : "TICKS");
-                sb.append(" DO\n");
+                sb.append(trigger.unit == TriggerNode.TimeUnit.SECONDS ? "seconds" : "ticks");
+                sb.append(" do\n");
             }
-            case REDSTONE_PULSE -> sb.append("EVERY REDSTONE PULSE DO\n");
+            case REDSTONE_PULSE -> sb.append("every redstone pulse do\n");
         }
         appendStatements(sb, trigger, 1);
-        sb.append("END\n");
+        sb.append("end\n");
     }
 
     private static void appendStatements(StringBuilder sb, StatementContainer container, int depth) {
@@ -101,13 +101,13 @@ public final class GraphToSfml {
 
     private static void appendIf(StringBuilder sb, IfStatementNode ifNode, int depth) {
         String indent = INDENT.repeat(depth);
-        sb.append(indent).append("IF ").append(conditionToSfml(ifNode.condition)).append(" THEN\n");
+        sb.append(indent).append("if ").append(conditionToSfml(ifNode.condition)).append(" then\n");
         appendStatements(sb, ifNode.thenBranch, depth + 1);
         if (ifNode.hasElse && !ifNode.elseBranch.statements.isEmpty()) {
-            sb.append(indent).append("ELSE\n");
+            sb.append(indent).append("else\n");
             appendStatements(sb, ifNode.elseBranch, depth + 1);
         }
-        sb.append(indent).append("END\n");
+        sb.append(indent).append("end\n");
     }
 
     private static String statementToSfml(StatementNode statement) {
@@ -123,7 +123,7 @@ public final class GraphToSfml {
     private static String ioToSfml(IOStatementNode io) {
         StringBuilder sb = new StringBuilder();
         boolean isInput = io.kind == StatementNode.Kind.INPUT;
-        sb.append(isInput ? "INPUT" : "OUTPUT");
+        sb.append(isInput ? "input" : "output");
 
         String limits = buildLimitList(io);
         if (!limits.isEmpty()) {
@@ -132,16 +132,16 @@ public final class GraphToSfml {
 
         String except = buildResourceIdList(io.except);
         if (!except.isEmpty()) {
-            sb.append(" EXCEPT ").append(except);
+            sb.append(" except ").append(except);
         }
 
-        sb.append(isInput ? " FROM" : " TO");
+        sb.append(isInput ? " from" : " to");
 
         if (!isInput && io.emptySlotsOnly) {
-            sb.append(" EMPTY SLOTS IN");
+            sb.append(" empty slots in");
         }
         if (io.each) {
-            sb.append(" EACH");
+            sb.append(" each");
         }
 
         sb.append(" ").append(labelAccessToSfml(io.labelAccess));
@@ -164,10 +164,10 @@ public final class GraphToSfml {
         String quantity = trimOrEmpty(limit.quantity);
         String retain = trimOrEmpty(limit.retain);
         if (!quantity.isEmpty()) {
-            parts.add(quantity + (limit.quantityEach ? " EACH" : ""));
+            parts.add(quantity + (limit.quantityEach ? " each" : ""));
         }
         if (!retain.isEmpty()) {
-            parts.add("RETAIN " + retain + (limit.retainEach ? " EACH" : ""));
+            parts.add("retain " + retain + (limit.retainEach ? " each" : ""));
         }
         String resources = buildResourceDisjunction(limit.resources);
         if (!resources.isEmpty()) {
@@ -182,7 +182,7 @@ public final class GraphToSfml {
 
     private static String forgetToSfml(ForgetStatementNode forget) {
         // #4: FORGET always clears everything in the visual editor (no label list).
-        return "FORGET";
+        return "forget";
     }
 
     // ----- label access -----
@@ -192,9 +192,9 @@ public final class GraphToSfml {
         sb.append(labels.isEmpty() ? "*" : labels);
 
         if (la.roundRobin == LabelAccessData.RoundRobin.BY_LABEL) {
-            sb.append(" ROUND ROBIN BY LABEL");
+            sb.append(" round robin by label");
         } else if (la.roundRobin == LabelAccessData.RoundRobin.BY_BLOCK) {
-            sb.append(" ROUND ROBIN BY BLOCK");
+            sb.append(" round robin by block");
         }
 
         String sides = buildSides(la);
@@ -204,50 +204,50 @@ public final class GraphToSfml {
 
         String slots = trimOrEmpty(la.slots);
         if (!slots.isEmpty()) {
-            sb.append(" SLOTS ").append(slots);
+            sb.append(" slots ").append(slots);
         }
         return sb.toString();
     }
 
     private static String buildSides(LabelAccessData la) {
         if (la.eachSide) {
-            return "EACH SIDE";
+            return "each side";
         }
         if (la.sides.isEmpty()) {
             return "";
         }
         List<String> names = new ArrayList<>();
         for (LabelAccessData.SideOption side : la.sides) {
-            names.add(side.name());
+            names.add(side.name().toLowerCase(java.util.Locale.ROOT));
         }
-        return String.join(", ", names) + " SIDE";
+        return String.join(", ", names) + " side";
     }
 
     // ----- conditions (boolexpr) -----
     public static String conditionToSfml(Condition condition) {
         if (condition == null) {
-            return "TRUE";
+            return "true";
         }
         return switch (condition.kind) {
-            case TRUE -> "TRUE";
-            case FALSE -> "FALSE";
+            case TRUE -> "true";
+            case FALSE -> "false";
             case HAS -> hasToSfml(condition);
             case REDSTONE -> redstoneToSfml(condition);
-            case NOT -> "NOT (" + conditionToSfml(condition.child) + ")";
-            case AND -> "(" + conditionToSfml(condition.left) + ") AND (" + conditionToSfml(condition.right) + ")";
-            case OR -> "(" + conditionToSfml(condition.left) + ") OR (" + conditionToSfml(condition.right) + ")";
-            case RAW -> (condition.raw == null || condition.raw.isBlank()) ? "TRUE" : condition.raw.strip();
+            case NOT -> "not (" + conditionToSfml(condition.child) + ")";
+            case AND -> "(" + conditionToSfml(condition.left) + ") and (" + conditionToSfml(condition.right) + ")";
+            case OR -> "(" + conditionToSfml(condition.left) + ") or (" + conditionToSfml(condition.right) + ")";
+            case RAW -> (condition.raw == null || condition.raw.isBlank()) ? "true" : condition.raw.strip();
         };
     }
 
     private static String hasToSfml(Condition c) {
         StringBuilder sb = new StringBuilder();
         if (c.setOp != null && c.setOp != Condition.SetOp.OVERALL) {
-            sb.append(c.setOp.name()).append(" ");
+            sb.append(c.setOp.name().toLowerCase(java.util.Locale.ROOT)).append(" ");
         }
         String labels = buildLabelList(c.labels);
         sb.append(labels.isEmpty() ? "*" : labels);
-        sb.append(" HAS ");
+        sb.append(" has ");
         sb.append(c.comparison == null ? ">=" : c.comparison.symbol);
         sb.append(" ");
         String count = trimOrEmpty(c.count);
@@ -262,17 +262,17 @@ public final class GraphToSfml {
         }
         String except = buildResourceIdList(c.except);
         if (!except.isEmpty()) {
-            sb.append(" EXCEPT ").append(except);
+            sb.append(" except ").append(except);
         }
         return sb.toString();
     }
 
     private static String redstoneToSfml(Condition c) {
         if (!c.redstoneHasComparison) {
-            return "REDSTONE";
+            return "redstone";
         }
         String count = trimOrEmpty(c.count);
-        return "REDSTONE " + (c.comparison == null ? ">=" : c.comparison.symbol) + " " + (count.isEmpty() ? "0" : count);
+        return "redstone " + (c.comparison == null ? ">=" : c.comparison.symbol) + " " + (count.isEmpty() ? "0" : count);
     }
 
     // ----- with clauses -----
@@ -280,22 +280,22 @@ public final class GraphToSfml {
         if (with == null || !with.isPresent()) {
             return "";
         }
-        String keyword = with.without ? "WITHOUT" : "WITH";
+        String keyword = with.without ? "without" : "with";
         return keyword + " " + withClauseToSfml(with.clause);
     }
 
     private static String withClauseToSfml(WithClause clause) {
         if (clause == null) {
-            return "TAG *:*";
+            return "tag *:*";
         }
         return switch (clause.kind) {
             case TAG -> {
                 String tag = trimOrEmpty(clause.tag);
-                yield "TAG " + (tag.isEmpty() ? "*:*" : tag);
+                yield "tag " + (tag.isEmpty() ? "*:*" : tag);
             }
-            case NOT -> "NOT (" + withClauseToSfml(clause.child) + ")";
-            case AND -> "(" + withClauseToSfml(clause.left) + ") AND (" + withClauseToSfml(clause.right) + ")";
-            case OR -> "(" + withClauseToSfml(clause.left) + ") OR (" + withClauseToSfml(clause.right) + ")";
+            case NOT -> "not (" + withClauseToSfml(clause.child) + ")";
+            case AND -> "(" + withClauseToSfml(clause.left) + ") and (" + withClauseToSfml(clause.right) + ")";
+            case OR -> "(" + withClauseToSfml(clause.left) + ") or (" + withClauseToSfml(clause.right) + ")";
         };
     }
 
@@ -307,7 +307,7 @@ public final class GraphToSfml {
 
     /** OR-joined resource id disjunction (used by limits and HAS). */
     private static String buildResourceDisjunction(String raw) {
-        return joinResources(raw, " OR ");
+        return joinResources(raw, " or ");
     }
 
     private static String joinResources(String raw, String sep) {
@@ -318,7 +318,9 @@ public final class GraphToSfml {
         for (String piece : raw.split(",")) {
             String r = piece.trim();
             if (!r.isEmpty()) {
-                out.add(r);
+                // #1: emit glob wildcards bare (*), genuine regexes quoted, so a parsed
+                // *configurable_* round-trips back to *configurable_* (not ".*configurable_.*").
+                out.add(SfmlResourceIds.toEmitForm(r));
             }
         }
         return String.join(sep, out);

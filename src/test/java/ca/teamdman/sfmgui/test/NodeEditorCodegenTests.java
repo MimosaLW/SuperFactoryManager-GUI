@@ -153,7 +153,7 @@ public class NodeEditorCodegenTests {
 
         String sfml = GraphToSfml.generate(graph);
         System.out.println(sfml);
-        assertTrue(sfml.contains("ELSE"), "else branch should be emitted");
+        assertTrue(sfml.contains("else"), "else branch should be emitted");
         SfmlTestSupport.assertNoCompileErrors(sfml);
     }
 
@@ -261,7 +261,7 @@ public class NodeEditorCodegenTests {
 
         String sfml = GraphToSfml.generate(graph);
         System.out.println(sfml);
-        assertTrue(sfml.contains(" OR "), "multiple resources should be OR-joined");
+        assertTrue(sfml.contains(" or "), "multiple resources should be OR-joined");
         SfmlTestSupport.assertNoCompileErrors(sfml);
     }
 
@@ -491,6 +491,30 @@ public class NodeEditorCodegenTests {
     public void roundTripExceptAndForget() {
         assertRoundTrip("NAME \"x\"\nEVERY 20 TICKS DO\n"
                         + " INPUT *ingot* EXCEPT iron_ingot, gold_ingot FROM a\n FORGET a\nEND");
+    }
+
+    @Test
+    public void roundTripGlobWildcardsStayBare() {
+        // #1: the user's original glob form (*configurable_*, *raw*) must survive a
+        // parse->regen round trip as a BARE glob, not a re-quoted/double-converted regex.
+        String src = "NAME \"x\"\nEVERY REDSTONE PULSE DO\n"
+                     + " INPUT FROM \"缓存\"\n"
+                     + " OUTPUT *raw* TO \"熔炉\" TOP SIDE\n"
+                     + " OUTPUT *configurable_* TO \"离心输入\"\n"
+                     + " OUTPUT EXCEPT *configurable_*, *raw* TO \"接口\"\nEND";
+        EditorGraph graph = SfmlToGraph.parse(src);
+        String regen = GraphToSfml.generate(graph);
+        System.out.println("REGEN:\n" + regen);
+        SfmlTestSupport.assertNoCompileErrors(regen);
+        // Must emit bare globs, never a quoted ".*...*" regex form.
+        assertTrue(regen.contains("*configurable_*"), "glob *configurable_* should round-trip bare");
+        assertTrue(regen.contains("*raw*"), "glob *raw* should round-trip bare");
+        assertTrue(!regen.contains(".*configurable_.*") && !regen.contains("\".*"),
+                "must not emit the quoted/regex .* form");
+        // Semantics must be identical to the source.
+        org.junit.jupiter.api.Assertions.assertEquals(
+                SfmlTestSupport.canonical(src), SfmlTestSupport.canonical(regen),
+                "glob round trip should preserve canonical AST");
     }
 
     @Test
