@@ -117,8 +117,8 @@ public class ResourcePickerScreen extends Screen {
         String raw = query == null ? "" : query.trim();
         filtered.clear();
         for (ResourceIndex.Entry entry : ResourceIndex.all()) {
-            if (raw.isEmpty() || PinyinSearch.matches(entry.displayName(), raw)
-                    || entry.searchText().contains(raw.toLowerCase(Locale.ROOT))) {
+            if (raw.isEmpty() || PinyinSearch.matches(entry.localizedDisplayName(), raw)
+                    || entry.localizedSearchText().contains(raw.toLowerCase(Locale.ROOT))) {
                 filtered.add(entry);
             }
         }
@@ -177,7 +177,7 @@ public class ResourcePickerScreen extends Screen {
                 this.width / 2, this.height - 42, 0xFFAAAAAA);
         if (hovered != null) {
             graphics.renderTooltip(this.font,
-                    List.of(Component.literal(hovered.displayName()), Component.literal(hovered.sfmlId())),
+                    List.of(Component.literal(hovered.localizedDisplayName()), Component.literal(hovered.sfmlId())),
                     java.util.Optional.empty(), mx, my);
         }
     }

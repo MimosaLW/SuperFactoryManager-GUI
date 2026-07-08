@@ -65,6 +65,17 @@ public final class ResourceIndex {
             String search = (displayName + " " + sfmlId).toLowerCase(Locale.ROOT);
             return new Entry(sfmlId, displayName, search, Kind.TEXT, ItemStack.EMPTY, null, 0);
         }
+
+        public String localizedDisplayName() {
+            if (kind == Kind.ITEM && !stack.isEmpty()) {
+                return stack.getHoverName().getString();
+            }
+            return displayName;
+        }
+
+        public String localizedSearchText() {
+            return (localizedDisplayName() + " " + sfmlId).toLowerCase(Locale.ROOT);
+        }
     }
 
     private static List<Entry> ENTRIES = null;
@@ -230,7 +241,7 @@ public final class ResourceIndex {
 
     /** Text fallback: draw the first 2 chars of the display name centered in the cell. */
     public static void renderTextIcon(GuiGraphics graphics, net.minecraft.client.gui.Font font, Entry entry, int x, int y) {
-        String name = entry.displayName();
+        String name = entry.localizedDisplayName();
         String abbrev = name.isEmpty() ? "?" : name.substring(0, Math.min(2, name.length()));
         graphics.fill(x, y, x + 16, y + 16, 0xFF2A2A33);
         graphics.drawCenteredString(font, abbrev, x + 8, y + 4, 0xFFCCCCCC);
