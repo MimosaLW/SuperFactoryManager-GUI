@@ -13,7 +13,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
-import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
+import net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -64,6 +64,17 @@ public final class ResourceIndex {
         static Entry text(String sfmlId, String displayName) {
             String search = (displayName + " " + sfmlId).toLowerCase(Locale.ROOT);
             return new Entry(sfmlId, displayName, search, Kind.TEXT, ItemStack.EMPTY, null, 0);
+        }
+
+        public String localizedDisplayName() {
+            if (kind == Kind.ITEM && !stack.isEmpty()) {
+                return stack.getHoverName().getString();
+            }
+            return displayName;
+        }
+
+        public String localizedSearchText() {
+            return (localizedDisplayName() + " " + sfmlId).toLowerCase(Locale.ROOT);
         }
     }
 
@@ -179,14 +190,27 @@ public final class ResourceIndex {
 
     /** Isolated so all Mekanism class references stay behind one guard. */
     private static void buildChemicals(List<Entry> entries) {
-        var registry = mekanism.api.MekanismAPI.CHEMICAL_REGISTRY;
-        for (mekanism.api.chemical.Chemical chemical : registry) {
-            if (chemical.isEmptyType()) continue;
-            ResourceLocation regName = chemical.getRegistryName();
-            String sfmlId = "chemical:" + regName.getNamespace() + ":" + regName.getPath();
-            String displayName = chemical.getTextComponent().getString();
-            entries.add(Entry.sprite(sfmlId, displayName, chemical.getIcon(), chemical.getTint()));
+        for (String registryMethod : List.of("gasRegistry", "infuseTypeRegistry", "pigmentRegistry", "slurryRegistry")) {
+            try {
+                Object registry = mekanism.api.MekanismAPI.class.getMethod(registryMethod).invoke(null);
+                if (registry instanceof Iterable<?> iterable) {
+                    for (Object value : iterable) {
+                        if (value instanceof mekanism.api.chemical.Chemical<?> chemical) {
+                            addChemical(entries, chemical);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
         }
+    }
+
+    private static void addChemical(List<Entry> entries, mekanism.api.chemical.Chemical<?> chemical) {
+        if (chemical.isEmptyType()) return;
+        ResourceLocation regName = chemical.getRegistryName();
+        String sfmlId = "chemical:" + regName.getNamespace() + ":" + regName.getPath();
+        String displayName = chemical.getTextComponent().getString();
+        entries.add(Entry.sprite(sfmlId, displayName, chemical.getIcon(), chemical.getTint()));
     }
 
     private static boolean isClassPresent(String className) {
@@ -217,7 +241,7 @@ public final class ResourceIndex {
 
     /** Text fallback: draw the first 2 chars of the display name centered in the cell. */
     public static void renderTextIcon(GuiGraphics graphics, net.minecraft.client.gui.Font font, Entry entry, int x, int y) {
-        String name = entry.displayName();
+        String name = entry.localizedDisplayName();
         String abbrev = name.isEmpty() ? "?" : name.substring(0, Math.min(2, name.length()));
         graphics.fill(x, y, x + 16, y + 16, 0xFF2A2A33);
         graphics.drawCenteredString(font, abbrev, x + 8, y + 4, 0xFFCCCCCC);

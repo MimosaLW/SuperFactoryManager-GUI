@@ -9,8 +9,8 @@ writing SFML (Super Factory Manager Language) by hand.
 > 打造的**节点/连线式可视化编程界面**。通过拖拽节点、连线来搭建工厂程序，
 > 而不必手写 SFML 代码。
 
-- **Minecraft**: 1.21.1
-- **Mod loader**: NeoForge 21.1.206
+- **Minecraft**: 1.20.1
+- **Mod loader**: Forge 47.x
 - **Requires**: Super Factory Manager (installed alongside this addon)
 
 ---
@@ -132,13 +132,13 @@ Requires JDK 21.
 ./gradlew jarJar       # produces the distributable jar with PinIn bundled (-all.jar)
 ```
 
-The build depends on an SFM jar placed at `libs/sfm-4.34.0.jar` (see
+The build depends on an SFM jar placed at `libs/sfm-4.34.0-1.20.1.jar` (see
 `gradle.properties` → `sfm_jar`), and on the Mekanism API (compile-only, for
 chemical resource icons).
 
 ## Usage / 使用
 
-1. Install NeoForge 1.21.1, Super Factory Manager, and this addon.
+1. Install Forge 1.20.1, Super Factory Manager, and this addon.
 2. Open an SFM Manager, then open the visual editor from the manager screen.
 3. Drag nodes from the left toolbar, wire them, and save — the program is written
    back as SFML that SFM runs.

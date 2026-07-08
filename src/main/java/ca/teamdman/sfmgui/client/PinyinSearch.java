@@ -1,8 +1,8 @@
 package ca.teamdman.sfmgui.client;
 
 import ca.teamdman.sfmgui.SFMGui;
-import me.towdium.pinin.PinIn;
 
+import java.lang.reflect.Method;
 import java.util.Locale;
 
 /**
@@ -14,14 +14,20 @@ public final class PinyinSearch {
     private PinyinSearch() {
     }
 
-    private static PinIn pinin;
+    private static Object pinin;
+    private static Method containsMethod;
     private static boolean failed = false;
 
-    private static PinIn pinin() {
+    private static Object pinin() {
         if (pinin == null && !failed) {
             try {
-                pinin = new PinIn();
-            } catch (Throwable t) {
+                Class<?> pininClass = Class.forName("me.towdium.pinin.PinIn");
+                pinin = pininClass.getConstructor().newInstance();
+                containsMethod = pininClass.getMethod("contains", String.class, String.class);
+            } catch (ClassNotFoundException t) {
+                failed = true;
+                SFMGui.LOGGER.warn("PinIn library not found; pinyin search disabled");
+            } catch (ReflectiveOperationException | LinkageError t) {
                 failed = true;
                 SFMGui.LOGGER.warn("PinIn init failed; pinyin search disabled", t);
             }
@@ -40,13 +46,13 @@ public final class PinyinSearch {
         if (s.toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT))) {
             return true;
         }
-        PinIn p = pinin();
+        Object p = pinin();
         if (p != null) {
             try {
                 // PinIn only matches lowercase pinyin tokens, so normalise the query
                 // (uppercase letters would otherwise never match).
-                return p.contains(s, query.toLowerCase(Locale.ROOT));
-            } catch (Throwable ignored) {
+                return (Boolean) containsMethod.invoke(p, s, query.toLowerCase(Locale.ROOT));
+            } catch (ReflectiveOperationException | ClassCastException ignored) {
             }
         }
         return false;

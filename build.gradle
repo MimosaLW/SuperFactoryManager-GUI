@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'net.neoforged.gradle.userdev' version '7.0.190'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
 }
 
 version = project.mod_version
@@ -11,13 +11,17 @@ base {
 }
 
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 repositories {
     mavenCentral()
-    maven { url = 'https://maven.neoforged.net/releases' }
+    maven { url = 'https://maven.minecraftforge.net' }
     maven { url = 'https://jitpack.io' }
+    flatDir {
+        dirs 'libs'
+    }
     // Mekanism maven (for API jar)
     maven { url = 'https://modmaven.dev/' }
     // BlameJared maven (for the JEI API jar)
@@ -26,64 +30,76 @@ repositories {
 
 // The SFM mod jar this addon builds against.
 def sfmJar = files(project.sfm_jar)
+def sfmDep = "blank:sfm:${project.sfm_jar_version}"
 
-// Mekanism API jar (compileOnly — only needed for chemical icon rendering at compile time).
-def mekApiCoords = "mekanism:Mekanism:1.21.1-10.7.4.60:api"
+// Mekanism API jar (compileOnly - only needed for chemical icon rendering at compile time).
+def mekApiCoords = "mekanism:Mekanism:${project.mekanism_version}:api"
 
-// JEI API (compileOnly — optional integration for item enumeration/rendering; guarded
+// JEI API (compileOnly - optional integration for item enumeration/rendering; guarded
 // at runtime so the addon works with or without JEI installed). The API is split into a
-// common part (IModPlugin, runtime, ingredients, constants) and a neoforge part.
-def jeiVersion = "19.21.0.247"
-def jeiCommonApi = "mezz.jei:jei-1.21.1-common-api:${jeiVersion}"
-def jeiNeoApi = "mezz.jei:jei-1.21.1-neoforge-api:${jeiVersion}"
+// common part (IModPlugin, runtime, ingredients, constants) and a forge part.
+def jeiCommonApi = "mezz.jei:jei-${project.minecraft_version}-common-api:${project.jei_version}"
+def jeiForgeApi = "mezz.jei:jei-${project.minecraft_version}-forge-api:${project.jei_version}"
 
 // PinIn: standalone Chinese pinyin matching library (bundled so pinyin search
 // works without requiring JustEnoughCharacters). Depends on fastutil, already
 // present in Minecraft, so we exclude it from the bundle.
 def pininCoords = "com.github.Towdium:PinIn:1.6.0"
 
-dependencies {
-    implementation "net.neoforged:neoforge:${project.neo_version}"
+minecraft {
+    mappings channel: 'official', version: project.minecraft_version
 
-    // SFM is a required companion mod at runtime; we only need it at compile time.
-    compileOnly sfmJar
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                sfmgui {
+                    source sourceSets.main
+                }
+            }
+        }
+        client { }
+        server { }
+    }
+}
+
+jarJar.enable()
+
+dependencies {
+    minecraft "${project.forge_group}:forge:${project.minecraft_version}-${project.forge_version}"
+
+    // SFM is a required companion mod at runtime. In dev, fg.deobf remaps the
+    // production jar so its obfuscated names match the Forge userdev classpath.
+    compileOnly fg.deobf(sfmDep)
+    runtimeOnly fg.deobf(sfmDep)
+    testImplementation sfmJar
+
     // Mekanism API: compile-only for chemical icon rendering; guarded at runtime.
     compileOnly(mekApiCoords) { transitive = false }
     // JEI API: compile-only optional integration; guarded at runtime.
     compileOnly(jeiCommonApi) { transitive = false }
-    compileOnly(jeiNeoApi) { transitive = false }
-    // Make SFM classes available when running tests (they use SFM's SFML parser/AST).
-    testImplementation sfmJar
+    compileOnly(jeiForgeApi) { transitive = false }
+
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // PinIn: compile against it, bundle it into the jar via jarJar.
     implementation(pininCoords) { transitive = false }
-    jarJar(pininCoords) { version { strictly "1.6.0" } }
-    testImplementation(pininCoords) { transitive = false }
-}
-
-// Provide SFM to the dev runtime classpath so runClient works with both mods loaded.
-runs {
-    configureEach {
-        systemProperty 'forge.logging.markers', 'REGISTRIES'
-        systemProperty 'forge.logging.console.level', 'debug'
-        modSource project.sourceSets.main
-        // SFM must be present at runtime; add it to the mod runtime classpath.
-        dependencies {
-            runtime sfmJar
-        }
+    jarJar(group: 'com.github.Towdium', name: 'PinIn', version: '1.6.0') {
+        jarJar.ranged(it, '[1.6.0,1.6.1)')
     }
-    client { }
-    server { }
+    testImplementation(pininCoords) { transitive = false }
 }
 
 tasks.named('processResources', ProcessResources).configure {
     def replaceProperties = [
             minecraft_version      : project.minecraft_version,
             minecraft_version_range: project.minecraft_version_range,
-            neo_version            : project.neo_version,
-            neo_version_range      : project.neo_version_range,
+            forge_version          : project.forge_version,
+            forge_version_range    : project.forge_version_range,
             loader_version_range   : project.loader_version_range,
             mod_id                 : project.mod_id,
             mod_name               : project.mod_name,
@@ -93,7 +109,7 @@ tasks.named('processResources', ProcessResources).configure {
             mod_description        : project.mod_description
     ]
     inputs.properties replaceProperties
-    filesMatching(['META-INF/neoforge.mods.toml']) {
+    filesMatching(['META-INF/mods.toml']) {
         expand replaceProperties
     }
 }

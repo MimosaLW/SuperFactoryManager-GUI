@@ -9,7 +9,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.minecraftforge.network.NetworkEvent;
+
+import java.util.function.Supplier;
 
 /**
  * Server-side handling for {@link PullLabelsPayload}: copies the manager disk's
@@ -19,9 +21,11 @@ public final class PullLabelsHandler {
     private PullLabelsHandler() {
     }
 
-    public static void handle(PullLabelsPayload msg, IPayloadContext ctx) {
+    public static void handle(PullLabelsPayload msg, Supplier<NetworkEvent.Context> ctxSupplier) {
+        NetworkEvent.Context ctx = ctxSupplier.get();
         ctx.enqueueWork(() -> {
-            if (!(ctx.player() instanceof ServerPlayer player)) {
+            ServerPlayer player = ctx.getSender();
+            if (player == null) {
                 return;
             }
             BlockEntity be = player.level().getBlockEntity(msg.pos());
@@ -60,6 +64,7 @@ public final class PullLabelsHandler {
             gunLabels.save(gun);
             feedback(player, "gui.sfmgui.pull_labels.success", ChatFormatting.GREEN, names.size());
         });
+        ctx.setPacketHandled(true);
     }
 
     /**

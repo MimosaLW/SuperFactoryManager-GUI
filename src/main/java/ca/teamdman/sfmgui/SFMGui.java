@@ -1,7 +1,7 @@
 package ca.teamdman.sfmgui;
 
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.common.Mod;
+import ca.teamdman.sfmgui.net.SFMGuiNetwork;
+import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,7 +18,8 @@ public class SFMGui {
     public static final String MOD_ID = "sfmgui";
     public static final Logger LOGGER = LoggerFactory.getLogger("SFMGui");
 
-    public SFMGui(IEventBus modEventBus) {
+    public SFMGui() {
+        SFMGuiNetwork.register();
         LOGGER.info("Super Factory Manager Visual GUI loaded");
     }
 }

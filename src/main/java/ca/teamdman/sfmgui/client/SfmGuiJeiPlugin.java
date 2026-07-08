@@ -13,7 +13,7 @@ import net.minecraft.resources.ResourceLocation;
 @JeiPlugin
 public class SfmGuiJeiPlugin implements IModPlugin {
     private static final ResourceLocation UID =
-            ResourceLocation.fromNamespaceAndPath(SFMGui.MOD_ID, "jei_plugin");
+            new ResourceLocation(SFMGui.MOD_ID, "jei_plugin");
 
     @Override
     public ResourceLocation getPluginUid() {

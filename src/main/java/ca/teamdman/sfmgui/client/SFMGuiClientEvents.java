@@ -4,14 +4,14 @@ import ca.teamdman.sfm.client.screen.ManagerScreen;
 import ca.teamdman.sfmgui.SFMGui;
 import ca.teamdman.sfmgui.net.OpenEditorHelper;
 import ca.teamdman.sfmgui.net.PullLabelsPayload;
+import ca.teamdman.sfmgui.net.SFMGuiNetwork;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ScreenEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.ScreenEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 
 /**
  * Injects addon buttons ("Visual Edit" and "Pull Labels") onto SFM's manager
@@ -86,7 +86,7 @@ public final class SFMGuiClientEvents {
             event.setCanceled(true);
         } else if (inside(mx, my, x, pullY(ms))) {
             try {
-                PacketDistributor.sendToServer(new PullLabelsPayload(ms.getMenu().MANAGER_POSITION));
+                SFMGuiNetwork.CHANNEL.sendToServer(new PullLabelsPayload(ms.getMenu().MANAGER_POSITION));
             } catch (Throwable t) {
                 SFMGui.LOGGER.error("Failed to pull labels", t);
             }

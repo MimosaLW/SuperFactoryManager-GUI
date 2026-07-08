@@ -632,7 +632,6 @@ public class NodeEditorScreen extends Screen {
     }
 
     // ===== rendering =====
-    @Override
     public void renderBackground(GuiGraphics g, int mx, int my, float pt) {
     }
 
@@ -1641,7 +1640,7 @@ public class NodeEditorScreen extends Screen {
             ResourceLocation id = parseResourceId(resourceId);
             if (id != null && BuiltInRegistries.FLUID.containsKey(id)) {
                 try {
-                    var ext = net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions
+                    var ext = net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions
                             .of(BuiltInRegistries.FLUID.get(id));
                     ResourceLocation still = ext.getStillTexture();
                     if (still != null) {
@@ -2659,21 +2658,21 @@ public class NodeEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double sx, double sy) {
+    public boolean mouseScrolled(double mx, double my, double delta) {
         // preview scroll (when preview open and cursor in preview panel area)
-        if (showPreview && sy != 0) {
+        if (showPreview && delta != 0) {
             int lh = this.font.lineHeight + 1;
             int ph = 8 + PREVIEW_VISIBLE_LINES * lh;
             int py = this.height - ph - 2;
             if (my >= py && my <= this.height - 2) {
-                previewScroll -= (int) Math.signum(sy);
+                previewScroll -= (int) Math.signum(delta);
                 previewScroll = Math.max(0, previewScroll);
                 return true;
             }
         }
-        if (sy != 0) {
+        if (delta != 0) {
             float old = zoom;
-            float nz = Mth.clamp(zoom * (sy > 0 ? 1.1f : 0.9f), ZOOM_MIN, ZOOM_MAX);
+            float nz = Mth.clamp(zoom * (delta > 0 ? 1.1f : 0.9f), ZOOM_MIN, ZOOM_MAX);
             if (nz != old) {
                 float gx = sx2gx(mx), gy = sy2gy(my);
                 zoom = nz;
@@ -2683,7 +2682,7 @@ public class NodeEditorScreen extends Screen {
                 return true;
             }
         }
-        return super.mouseScrolled(mx, my, sx, sy);
+        return super.mouseScrolled(mx, my, delta);
     }
 
     @Override

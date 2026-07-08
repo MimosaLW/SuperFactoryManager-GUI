@@ -16,7 +16,7 @@ public final class ClassicTextures {
     }
 
     private static ResourceLocation tex(String name) {
-        return ResourceLocation.fromNamespaceAndPath("sfmgui", "textures/gui/classic/" + name + ".png");
+        return new ResourceLocation("sfmgui", "textures/gui/classic/" + name + ".png");
     }
 
     public static final ResourceLocation FLOW = tex("flow_components");
