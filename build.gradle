@@ -86,10 +86,13 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
-    // PinIn: compile against it, bundle it into the jar via jarJar.
+    // PinIn: compile against it, bundle it into the jar via jarJar. Exclude its
+    // transitive fastutil — Minecraft already ships fastutil, so bundling it would
+    // bloat the -all jar by ~18MB (and risk duplicate-class conflicts).
     implementation(pininCoords) { transitive = false }
     jarJar(group: 'com.github.Towdium', name: 'PinIn', version: '1.6.0') {
         jarJar.ranged(it, '[1.6.0,1.6.1)')
+        transitive = false
     }
     testImplementation(pininCoords) { transitive = false }
 }
