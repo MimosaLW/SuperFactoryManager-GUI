@@ -29,9 +29,12 @@ import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -130,12 +133,20 @@ public class NodeEditorScreen extends Screen {
     // interaction state
     private @Nullable EditorNode draggingNode = null;
     private double dragDX, dragDY;
+    private final Set<EditorNode> selectedNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<EditorNode, int[]> selectionDragStarts = new IdentityHashMap<>();
+    private boolean selectingBox = false;
+    private double selectionStartX, selectionStartY;
+    private double selectionEndX, selectionEndY;
+    private float selectionDragStartGX, selectionDragStartGY;
     private boolean panning = false;
     private double panStartMX, panStartMY;
     private float panStartX, panStartY;
     private @Nullable EditorNode connectSource = null;
     private boolean showPreview = false;
     private int previewScroll = 0;
+    private int previewVisibleLines = PREVIEW_DEFAULT_VISIBLE_LINES;
+    private boolean resizingPreview = false;
     /**
      * #1: the node currently showing its delete-confirm X. Right-clicking a node
      * arms it (shows the X); left-clicking that X performs the delete. Any other
@@ -678,6 +689,8 @@ public class NodeEditorScreen extends Screen {
             renderNodeControls(g, graph.selected, mx, my);
         }
 
+        renderSelectionHighlights(g);
+
         // #7: red outlines around nodes referencing the highlighted label
         renderLabelHighlights(g);
 
@@ -702,6 +715,8 @@ public class NodeEditorScreen extends Screen {
             g.fill(mx, Math.min(a[1], my), mx + 1, Math.max(a[1], my) + 1, 0xFF888888);
         }
 
+        renderSelectionBox(g);
+
         // ===== screen-space top bar (fixed, does not follow canvas) =====
         renderTopBar(g, mx, my);
 
@@ -717,7 +732,7 @@ public class NodeEditorScreen extends Screen {
         }
 
         if (showPreview) {
-            renderPreview(g);
+            renderPreview(g, mx, my);
         }
 
         // #2: labels dropdown overlay (above canvas/preview, below tooltips)
@@ -832,6 +847,116 @@ public class NodeEditorScreen extends Screen {
     }
 
     private static final int HIGHLIGHT_COLOR = 0xFFFF3030;
+    private static final int SELECTION_COLOR = 0xFF2F6FFF;
+    private static final int SELECTION_FILL = 0x302F6FFF;
+
+    private void renderSelectionHighlights(GuiGraphics g) {
+        List<EditorNode> visible = allVisibleNodes();
+        selectedNodes.removeIf(node -> !visible.contains(node));
+        for (EditorNode node : selectedNodes) {
+            NodeLayout L = layout(node);
+            int x = node.x, y = node.y, w = L.width, h = L.height;
+            int t = 2;
+            g.fill(x - t, y - t, x + w + t, y, SELECTION_COLOR);
+            g.fill(x - t, y + h, x + w + t, y + h + t, SELECTION_COLOR);
+            g.fill(x - t, y, x, y + h, SELECTION_COLOR);
+            g.fill(x + w, y, x + w + t, y + h, SELECTION_COLOR);
+        }
+    }
+
+    private void renderSelectionBox(GuiGraphics g) {
+        if (!selectingBox) {
+            return;
+        }
+        int x0 = (int) Math.round(Math.min(selectionStartX, selectionEndX));
+        int y0 = (int) Math.round(Math.min(selectionStartY, selectionEndY));
+        int x1 = (int) Math.round(Math.max(selectionStartX, selectionEndX));
+        int y1 = (int) Math.round(Math.max(selectionStartY, selectionEndY));
+        if (x1 - x0 < 2 || y1 - y0 < 2) {
+            return;
+        }
+        g.fill(x0, y0, x1, y1, SELECTION_FILL);
+        g.fill(x0, y0, x1, y0 + 1, SELECTION_COLOR);
+        g.fill(x0, y1 - 1, x1, y1, SELECTION_COLOR);
+        g.fill(x0, y0, x0 + 1, y1, SELECTION_COLOR);
+        g.fill(x1 - 1, y0, x1, y1, SELECTION_COLOR);
+    }
+
+    private void setSingleSelected(@Nullable EditorNode node) {
+        selectedNodes.clear();
+        graph.selected = node;
+        if (node != null) {
+            selectedNodes.add(node);
+        }
+    }
+
+    private void clearSelection() {
+        selectedNodes.clear();
+        graph.selected = null;
+    }
+
+    private void beginBoxSelection(double mx, double my) {
+        selectingBox = true;
+        selectionStartX = selectionEndX = mx;
+        selectionStartY = selectionEndY = my;
+        selectedNodes.clear();
+        graph.selected = null;
+        endFieldEditing();
+    }
+
+    private void updateBoxSelection(double mx, double my) {
+        selectionEndX = mx;
+        selectionEndY = my;
+    }
+
+    private void finishBoxSelection() {
+        if (!selectingBox) {
+            return;
+        }
+        selectingBox = false;
+        selectedNodes.clear();
+
+        double x0 = Math.min(selectionStartX, selectionEndX);
+        double y0 = Math.min(selectionStartY, selectionEndY);
+        double x1 = Math.max(selectionStartX, selectionEndX);
+        double y1 = Math.max(selectionStartY, selectionEndY);
+        boolean meaningfulDrag = Math.abs(selectionEndX - selectionStartX) >= 3
+                || Math.abs(selectionEndY - selectionStartY) >= 3;
+        if (!meaningfulDrag) {
+            graph.selected = null;
+            rebuild();
+            return;
+        }
+        for (EditorNode node : allVisibleNodes()) {
+            if (nodeScreenRectIntersects(node, x0, y0, x1, y1)) {
+                selectedNodes.add(node);
+            }
+        }
+        graph.selected = selectedNodes.stream().findFirst().orElse(null);
+        rebuild();
+    }
+
+    private boolean nodeScreenRectIntersects(EditorNode node, double x0, double y0, double x1, double y1) {
+        NodeLayout L = layout(node);
+        int nx0 = gx2sx(node.x);
+        int ny0 = gy2sy(node.y);
+        int nx1 = nx0 + Math.round(L.width * unit());
+        int ny1 = ny0 + Math.round(L.height * unit());
+        return nx1 >= x0 && nx0 <= x1 && ny1 >= y0 && ny0 <= y1;
+    }
+
+    private void beginNodeDrag(EditorNode node, double mx, double my) {
+        draggingNode = node;
+        dragDX = sx2gx(mx) - node.x;
+        dragDY = sy2gy(my) - node.y;
+        selectionDragStartGX = sx2gx(mx);
+        selectionDragStartGY = sy2gy(my);
+        selectionDragStarts.clear();
+        Set<EditorNode> dragged = selectedNodes.contains(node) ? selectedNodes : Set.of(node);
+        for (EditorNode selected : dragged) {
+            selectionDragStarts.put(selected, new int[]{selected.x, selected.y});
+        }
+    }
 
     /** Draw a red outline around every node referencing the highlighted label (#7). */
     private void renderLabelHighlights(GuiGraphics g) {
@@ -1097,9 +1222,48 @@ public class NodeEditorScreen extends Screen {
         return -1;
     }
 
-    private static final int PREVIEW_VISIBLE_LINES = 5;
+    private static final int PREVIEW_DEFAULT_VISIBLE_LINES = 5;
+    private static final int PREVIEW_MIN_VISIBLE_LINES = 3;
+    private static final int PREVIEW_RESIZE_HANDLE_H = 6;
 
-    private void renderPreview(GuiGraphics g) {
+    private int previewLineHeight() {
+        return this.font.lineHeight + 1;
+    }
+
+    private int maxPreviewVisibleLines() {
+        int available = Math.max(0, this.height - TOP_BAR_H - 14);
+        return Math.max(PREVIEW_MIN_VISIBLE_LINES, (available - 8) / previewLineHeight());
+    }
+
+    private int previewVisibleLineCount() {
+        previewVisibleLines = Mth.clamp(previewVisibleLines, PREVIEW_MIN_VISIBLE_LINES, maxPreviewVisibleLines());
+        return previewVisibleLines;
+    }
+
+    private int previewHeight() {
+        return 8 + previewVisibleLineCount() * previewLineHeight();
+    }
+
+    private int previewTop() {
+        return this.height - previewHeight() - 2;
+    }
+
+    private boolean overPreviewResizeHandle(double mx, double my) {
+        int py = previewTop();
+        return showPreview
+                && mx >= 2 && mx <= this.width - 2
+                && my >= py - PREVIEW_RESIZE_HANDLE_H / 2.0
+                && my <= py + PREVIEW_RESIZE_HANDLE_H / 2.0;
+    }
+
+    private void resizePreviewToMouse(double my) {
+        int lh = previewLineHeight();
+        int desiredHeight = Math.max(8 + PREVIEW_MIN_VISIBLE_LINES * lh, this.height - 2 - (int) Math.round(my));
+        previewVisibleLines = Mth.clamp((desiredHeight - 8) / lh, PREVIEW_MIN_VISIBLE_LINES, maxPreviewVisibleLines());
+        previewScroll = Math.max(0, previewScroll);
+    }
+
+    private void renderPreview(GuiGraphics g, int mx, int my) {
         // Preview the program body only (strip our layout/camera/note comments), with
         // SFM syntax highlighting so it matches the vanilla program view (#6).
         String sfml = LayoutMemory.stripLayout(generateSfml()).stripTrailing();
@@ -1107,25 +1271,33 @@ public class NodeEditorScreen extends Screen {
         if (lines.isEmpty()) {
             lines.add(Component.literal(" "));
         }
-        int lh = this.font.lineHeight + 1;
-        int ph = 8 + PREVIEW_VISIBLE_LINES * lh;
-        int py = this.height - ph - 2;
+        int lh = previewLineHeight();
+        int visibleLines = previewVisibleLineCount();
+        int ph = previewHeight();
+        int py = previewTop();
         int pw = this.width - 14; // leave room for scrollbar
+        boolean resizeHover = overPreviewResizeHandle(mx, my);
+        int handleColor = resizingPreview ? 0xFF8A8A92 : (resizeHover ? 0xFF707078 : 0xFF4A4A50);
+        g.fill(2, py - 2, this.width - 2, py, handleColor);
         g.fill(2, py, this.width - 2, this.height - 2, 0xF0101015);
+        int cx = this.width / 2;
+        g.fill(cx - 12, py - 1, cx - 7, py, 0xFFB0B0B0);
+        g.fill(cx - 2, py - 1, cx + 3, py, 0xFFB0B0B0);
+        g.fill(cx + 8, py - 1, cx + 13, py, 0xFFB0B0B0);
         // clamp scroll
-        previewScroll = Math.max(0, Math.min(previewScroll, Math.max(0, lines.size() - PREVIEW_VISIBLE_LINES)));
+        previewScroll = Math.max(0, Math.min(previewScroll, Math.max(0, lines.size() - visibleLines)));
         int ty = py + 4;
-        for (int i = previewScroll; i < previewScroll + PREVIEW_VISIBLE_LINES && i < lines.size(); i++) {
+        for (int i = previewScroll; i < previewScroll + visibleLines && i < lines.size(); i++) {
             g.drawString(this.font, trimToWidth(lines.get(i), pw - 12), 8, ty, 0xFFFFFFFF, false);
             ty += lh;
         }
         // scrollbar (right edge)
-        if (lines.size() > PREVIEW_VISIBLE_LINES) {
+        if (lines.size() > visibleLines) {
             int sbx = this.width - 8;
             int sbh = ph - 8;
-            float ratio = (float) PREVIEW_VISIBLE_LINES / lines.size();
+            float ratio = (float) visibleLines / lines.size();
             int thumbH = Math.max(6, (int) (sbh * ratio));
-            float pos = lines.size() <= PREVIEW_VISIBLE_LINES ? 0 : (float) previewScroll / (lines.size() - PREVIEW_VISIBLE_LINES);
+            float pos = lines.size() <= visibleLines ? 0 : (float) previewScroll / (lines.size() - visibleLines);
             int thumbY = py + 4 + (int) ((sbh - thumbH) * pos);
             g.fill(sbx, py + 4, sbx + 4, py + 4 + sbh, 0xFF303030);
             g.fill(sbx, thumbY, sbx + 4, thumbY + thumbH, 0xFF909090);
@@ -1865,6 +2037,9 @@ public class NodeEditorScreen extends Screen {
                 }
             }
         }
+        if (graph.selected != null) {
+            setSingleSelected(graph.selected);
+        }
         markDirty();
         rebuild();
     }
@@ -1905,7 +2080,7 @@ public class NodeEditorScreen extends Screen {
         out.openMenus.add(2);
         timer.statements.add(out);
 
-        graph.selected = timer;
+        setSingleSelected(timer);
         markDirty();
         rebuild();
     }
@@ -1961,7 +2136,7 @@ public class NodeEditorScreen extends Screen {
         forget.openMenus.add(0);
         timer.statements.add(forget);
 
-        graph.selected = timer;
+        setSingleSelected(timer);
         markDirty();
         rebuild();
     }
@@ -2429,6 +2604,14 @@ public class NodeEditorScreen extends Screen {
         if (super.mouseClicked(mx, my, button)) {
             return true;
         }
+        if (button == 0 && overPreviewResizeHandle(mx, my)) {
+            resizingPreview = true;
+            resizePreviewToMouse(my);
+            return true;
+        }
+        if (button == 0 && showPreview && my >= previewTop() && my <= this.height - 2) {
+            return true;
+        }
         int tool = hoverToolButton(mx, my);
         if (tool >= 0 && button == 0) {
             ToolKind tk = ToolKind.values()[tool];
@@ -2515,28 +2698,28 @@ public class NodeEditorScreen extends Screen {
                 int aw = Math.round(ClassicTextures.ARROW_W * unit()), ah = Math.round(ClassicTextures.ARROW_H * unit());
                 if (mx >= ax && mx <= ax + aw && my >= ay && my <= ay + ah) {
                     n.collapsed = !n.collapsed;
-                    graph.selected = n;
+                    setSingleSelected(n);
                     rebuild();
                     return true;
                 }
                 if (!n.collapsed && handleStripClick(n, mx, my)) {
                     return true;
                 }
-                graph.selected = n;
-                draggingNode = n;
-                dragDX = sx2gx(mx) - n.x;
-                dragDY = sy2gy(my) - n.y;
+                if (selectedNodes.contains(n) && selectedNodes.size() > 1) {
+                    graph.selected = n;
+                } else {
+                    setSingleSelected(n);
+                }
+                beginNodeDrag(n, mx, my);
                 endFieldEditing();
                 rebuild();
                 return true;
             }
-            // Clicking empty canvas clears any armed delete.
+            // Empty-canvas left-drag starts box selection; a plain click just clears.
             pendingDelete = null;
             pendingWireDelete = null;
-            if (graph.selected != null) {
-                graph.selected = null;
-                rebuild();
-            }
+            beginBoxSelection(mx, my);
+            rebuild();
             return true;
         }
         if (button == 1 || button == 2) {
@@ -2551,7 +2734,7 @@ public class NodeEditorScreen extends Screen {
                     // delete-confirm X on this node (right-click again toggles it off).
                     pendingDelete = (pendingDelete == hit) ? null : hit;
                     pendingWireDelete = null;
-                    graph.selected = hit;
+                    setSingleSelected(hit);
                     rebuild();
                     return true;
                 }
@@ -2616,7 +2799,7 @@ public class NodeEditorScreen extends Screen {
             int sx = gx2sx(node.x + 2);
             int sw = Math.round(ClassicTextures.MENU_ITEM_W * unit());
             if (mx >= sx && mx <= sx + sw && my >= sy && my <= sy + sh) {
-                graph.selected = node;
+                setSingleSelected(node);
                 // #5: toggle just this menu; other open menus stay open.
                 node.toggleMenu(i);
                 rebuild();
@@ -2628,9 +2811,26 @@ public class NodeEditorScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
+        if (resizingPreview) {
+            resizePreviewToMouse(my);
+            return true;
+        }
+        if (selectingBox) {
+            updateBoxSelection(mx, my);
+            return true;
+        }
         if (draggingNode != null) {
-            draggingNode.x = Math.round(sx2gx(mx) - (float) dragDX);
-            draggingNode.y = Math.round(sy2gy(my) - (float) dragDY);
+            if (selectionDragStarts.size() > 1) {
+                int dxg = Math.round(sx2gx(mx) - selectionDragStartGX);
+                int dyg = Math.round(sy2gy(my) - selectionDragStartGY);
+                selectionDragStarts.forEach((node, start) -> {
+                    node.x = start[0] + dxg;
+                    node.y = start[1] + dyg;
+                });
+            } else {
+                draggingNode.x = Math.round(sx2gx(mx) - (float) dragDX);
+                draggingNode.y = Math.round(sy2gy(my) - (float) dragDY);
+            }
             markDirty();
             // move the open-menu fields with the node
             rebuildFieldPositions();
@@ -2646,15 +2846,22 @@ public class NodeEditorScreen extends Screen {
 
     /** Recompute field graph-anchors when a node with an open menu moves while dragging. */
     private void rebuildFieldPositions() {
-        if (draggingNode != null && !draggingNode.openMenus.isEmpty()) {
+        boolean movedOpenMenu = selectionDragStarts.keySet().stream().anyMatch(node -> !node.openMenus.isEmpty());
+        if (draggingNode != null && (!draggingNode.openMenus.isEmpty() || movedOpenMenu)) {
             rebuild();
         }
     }
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
+        if (selectingBox) {
+            updateBoxSelection(mx, my);
+            finishBoxSelection();
+        }
         draggingNode = null;
+        selectionDragStarts.clear();
         panning = false;
+        resizingPreview = false;
         return super.mouseReleased(mx, my, button);
     }
 
@@ -2662,9 +2869,7 @@ public class NodeEditorScreen extends Screen {
     public boolean mouseScrolled(double mx, double my, double sx, double sy) {
         // preview scroll (when preview open and cursor in preview panel area)
         if (showPreview && sy != 0) {
-            int lh = this.font.lineHeight + 1;
-            int ph = 8 + PREVIEW_VISIBLE_LINES * lh;
-            int py = this.height - ph - 2;
+            int py = previewTop();
             if (my >= py && my <= this.height - 2) {
                 previewScroll -= (int) Math.signum(sy);
                 previewScroll = Math.max(0, previewScroll);
@@ -2777,6 +2982,10 @@ public class NodeEditorScreen extends Screen {
             return true;
         }
         if (key == GLFW.GLFW_KEY_ESCAPE) {
+            if (selectingBox) {
+                selectingBox = false;
+                return true;
+            }
             if (connectSource != null) {
                 connectSource = null;
                 return true;
@@ -2784,8 +2993,9 @@ public class NodeEditorScreen extends Screen {
             onClose();
             return true;
         }
-        if ((key == GLFW.GLFW_KEY_DELETE || key == GLFW.GLFW_KEY_BACKSPACE) && graph.selected != null) {
-            deleteNode(graph.selected);
+        if ((key == GLFW.GLFW_KEY_DELETE || key == GLFW.GLFW_KEY_BACKSPACE)
+                && (!selectedNodes.isEmpty() || graph.selected != null)) {
+            deleteSelectedNodes();
             return true;
         }
         return false;
@@ -2860,6 +3070,29 @@ public class NodeEditorScreen extends Screen {
 
     private void deleteNode(EditorNode node) {
         pushUndo();
+        deleteNodeInternal(node);
+        markDirty();
+        rebuild();
+    }
+
+    private void deleteSelectedNodes() {
+        List<EditorNode> targets = selectedNodes.isEmpty()
+                ? List.of(graph.selected)
+                : new ArrayList<>(selectedNodes);
+        targets.removeIf(java.util.Objects::isNull);
+        if (targets.isEmpty()) {
+            return;
+        }
+        pushUndo();
+        for (EditorNode node : targets) {
+            deleteNodeInternal(node);
+        }
+        clearSelection();
+        markDirty();
+        rebuild();
+    }
+
+    private void deleteNodeInternal(EditorNode node) {
         if (node instanceof StatementNode s && detached.contains(s)) {
             detached.remove(s);
         } else if (node instanceof TriggerNode trigger) {
@@ -2887,9 +3120,11 @@ public class NodeEditorScreen extends Screen {
         if (pendingDelete == node) {
             pendingDelete = null;
         }
+        if (pendingWireDelete != null && (pendingWireDelete.parent() == node || pendingWireDelete.child() == node)) {
+            pendingWireDelete = null;
+        }
+        selectedNodes.remove(node);
         sidesExpanded.remove(node);
-        markDirty();
-        rebuild();
     }
 
     // ===== connections =====
@@ -3105,7 +3340,7 @@ public class NodeEditorScreen extends Screen {
             graph.name = g.name;
             graph.triggers.clear();
             graph.triggers.addAll(g.triggers);
-            graph.selected = null;
+            clearSelection();
             detached.clear();
             // detached statements were serialized as extra roots; SfmlToGraph keeps
             // them inside triggers, so nothing extra to restore here.
@@ -3143,7 +3378,7 @@ public class NodeEditorScreen extends Screen {
             graph.name = g.name;
             graph.triggers.clear();
             graph.triggers.addAll(g.triggers);
-            graph.selected = null;
+            clearSelection();
             detached.clear();
             float[] cam = LayoutMemory.readCamera(text);
             if (cam != null) {
