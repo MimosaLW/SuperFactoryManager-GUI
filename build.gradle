@@ -45,7 +45,8 @@ def pininCoords = "com.github.Towdium:PinIn:1.6.0"
 dependencies {
     implementation "net.neoforged:neoforge:${project.neo_version}"
 
-    // SFM is a required companion mod at runtime; we only need it at compile time.
+    // SFM is a required companion mod. Keep it compile-only here; dev runs load
+    // the jar from runs/*/mods so NeoForge sees it as a real mod, not a library.
     compileOnly sfmJar
     // Mekanism API: compile-only for chemical icon rendering; guarded at runtime.
     compileOnly(mekApiCoords) { transitive = false }
@@ -63,16 +64,19 @@ dependencies {
     testImplementation(pininCoords) { transitive = false }
 }
 
-// Provide SFM to the dev runtime classpath so runClient works with both mods loaded.
+def devRunDirs = ['client', 'server']
+
+
+
+tasks.matching { it.name in ['runClient', 'runServer'] }.configureEach {
+    dependsOn tasks.named('installRuntimeMods')
+}
+
 runs {
     configureEach {
         systemProperty 'forge.logging.markers', 'REGISTRIES'
         systemProperty 'forge.logging.console.level', 'debug'
         modSource project.sourceSets.main
-        // SFM must be present at runtime; add it to the mod runtime classpath.
-        dependencies {
-            runtime sfmJar
-        }
     }
     client { }
     server { }

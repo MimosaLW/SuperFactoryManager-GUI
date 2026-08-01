@@ -1,0 +1,144 @@
+# Super Factory Manager — Visual GUI (SFM-GUI)
+
+A node / wire based **visual program editor** for the Minecraft mod
+[Super Factory Manager (SFM)](https://github.com/TeamDman/SuperFactoryManager).
+Build factory programs by dragging nodes and wiring them together instead of
+writing SFML (Super Factory Manager Language) by hand.
+
+> 一个为 [Super Factory Manager](https://github.com/TeamDman/SuperFactoryManager)
+> 打造的**节点/连线式可视化编程界面**。通过拖拽节点、连线来搭建工厂程序，
+> 而不必手写 SFML 代码。
+
+- **Minecraft**: 1.21.1
+- **Mod loader**: NeoForge 21.1.206
+- **Requires**: Super Factory Manager (installed alongside this addon)
+
+---
+
+## Features / 功能
+
+- Classic *Steve's Factory Manager* styled node canvas (pan / zoom).
+- Trigger, Input, Output, If, Forget and Raw statement nodes.
+- Series (chain) wiring between statements.
+- Searchable resource picker with item icons, fluids and Mekanism chemicals.
+- Pinyin-aware search (中文拼音搜索) via the bundled
+  [PinIn](https://github.com/Towdium/PinIn) library.
+- Live SFML preview with syntax highlighting (reuses SFM's own highlighter).
+- Round-trips to plain SFML, so programs stay compatible with SFM.
+
+---
+
+## Downloads / 下载版本
+
+Each release ships **two** jars — pick one:
+
+- **`sfmgui-<mc>-<ver>-all.jar`** — the full build with the
+  [PinIn](https://github.com/Towdium/PinIn) library bundled in. **Chinese pinyin
+  search is supported.** This is the one most players want; just drop it in `mods/`.
+- **`sfmgui-<mc>-<ver>.jar`** — the slim build **without** PinIn bundled.
+  **Chinese pinyin search is NOT supported** (plain name/id search still works).
+  Use this only if PinIn is already provided elsewhere in your pack.
+
+> 每个发行版都提供**两个** jar，二选一：
+> - **`...-all.jar`**：完整版，已内置 [PinIn](https://github.com/Towdium/PinIn) 库，
+>   **支持中文拼音搜索**。大多数玩家用这个，直接丢进 `mods/` 即可。
+> - **不带 `-all` 的 `...jar`**：精简版，**未内置 PinIn，不支持中文拼音搜索**
+>   （普通名称/ID 搜索仍可用）。仅当你的整合包已另行提供 PinIn 时才用它。
+
+---
+
+## Attribution & Sources / 参考来源
+
+This project stands on the shoulders of two prior works and is **not** an
+original factory-automation design:
+
+### 1. Super Factory Manager (SFM) — TeamDman
+- Repository: <https://github.com/TeamDman/SuperFactoryManager>
+- Author: **TeamDman**
+- License: **Mozilla Public License 2.0**
+
+This addon is built **on top of** SFM. It compiles and runs against SFM's public
+API, reuses SFM's SFML parser / AST, program packet, label handling and syntax
+highlighter, and produces standard SFML programs that SFM executes. All of the
+factory-automation logic, the SFML language, and the underlying manager belong to
+SFM. This project only adds a visual editing front-end.
+
+### 2. Steve's Factory Manager (the node-editor UI inspiration)
+
+The visual node-editor design — the node canvas, menu strips, connection nubs and
+the `flow_components` sprite layout — is inspired by and ported from the classic
+*Steve's Factory Manager* and its community reimplementations:
+
+- **ModJam3 / Steve's Factory Manager** — Vswe (original author):
+  <https://github.com/Vswe/ModJam3>
+- **Steve's Factory Manager (Reborn / continuation)** — gigabit101:
+  <https://github.com/gigabit101/StevesFactoryManager>
+
+The classic UI look and feel (frames, menu strips, connection nubs, the flow
+component sprite sheet) originate from these projects.
+
+If you enjoy this addon, please support the original **Super Factory Manager** and
+the authors of **Steve's Factory Manager** (Vswe and gigabit101).
+
+> 本项目的节点编辑器 UI 参考并移植自经典的 *Steve's Factory Manager* 及其社区续作：
+> Vswe 的 [ModJam3](https://github.com/Vswe/ModJam3) 与
+> gigabit101 的 [StevesFactoryManager](https://github.com/gigabit101/StevesFactoryManager)。
+
+---
+
+## AI-Assisted Development / AI 辅助开发
+
+I am not an experienced programmer and lack the ability to build this project on my
+own. A large part of the code in this repository was written with the help of AI
+tools, under my direction and testing. Please keep this in mind:
+
+- The code may contain mistakes, non-idiomatic patterns, or rough edges.
+- Bug reports, reviews, and pull requests are very welcome and appreciated.
+- Credit for the underlying design and heavy lifting belongs to the upstream
+  projects listed above (Super Factory Manager, Steve's Factory Manager).
+
+> 作者本人编程能力有限，无法独立完成本项目。仓库中的大部分代码是在我的指导和测试下，
+> **借助 AI 工具**编写完成的。因此代码可能存在错误或不规范之处，欢迎提交 issue、
+> 审查与 PR。项目的核心设计与主要贡献归功于上述上游项目（Super Factory Manager、
+> Steve's Factory Manager）。
+
+---
+
+## License / 开源协议
+
+This project is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**, the
+same license as Super Factory Manager, to remain compatible with the upstream code
+it builds upon.
+
+- Full text: see [`LICENSE`](./LICENSE) or <https://www.mozilla.org/en-US/MPL/2.0/>.
+- Each file governed by the MPL is subject to the terms of the MPL. If a copy of
+  the MPL was not distributed with a file, you can obtain one at the URL above.
+
+> 本项目采用 **Mozilla Public License 2.0 (MPL-2.0)** 协议开源，与其所依赖的
+> Super Factory Manager 保持一致，以兼容上游代码。协议全文见 [`LICENSE`](./LICENSE)。
+
+### Bundled third-party code
+- **PinIn** (Towdium) — bundled for Chinese pinyin search, MIT License:
+  <https://github.com/Towdium/PinIn>
+
+---
+
+## Building / 构建
+
+Requires JDK 21.
+
+```bash
+./gradlew build        # compile + run tests, produces build/libs/*.jar
+./gradlew jarJar       # produces the distributable jar with PinIn bundled (-all.jar)
+```
+
+The build depends on an SFM jar placed at `libs/sfm-4.34.0.jar` (see
+`gradle.properties` → `sfm_jar`), and on the Mekanism API (compile-only, for
+chemical resource icons).
+
+## Usage / 使用
+
+1. Install NeoForge 1.21.1, Super Factory Manager, and this addon.
+2. Open an SFM Manager, then open the visual editor from the manager screen.
+3. Drag nodes from the left toolbar, wire them, and save — the program is written
+   back as SFML that SFM runs.
